@@ -1,5 +1,9 @@
 {
   "appId": "com.rooom.talk",
   "appName": "RoooM Talk",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "url": "https://rooom-talk.com",
+    "cleartext": false
+  }
 }
