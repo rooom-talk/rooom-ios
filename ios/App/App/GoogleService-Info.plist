@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>584400465782-odedk8ta7he8hm7hii1n7drolk7iq7qv.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.584400465782-odedk8ta7he8hm7hii1n7drolk7iq7qv</string>
+	<key>API_KEY</key>
+	<string>AIzaSyBOntb5c6ER0DtHPlFy1Ipbcq4HqI2niPE</string>
+	<key>GCM_SENDER_ID</key>
+	<string>584400465782</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.rooom.talk</string>
+	<key>PROJECT_ID</key>
+	<string>room-app-d04eb</string>
+	<key>STORAGE_BUCKET</key>
+	<string>room-app-d04eb.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:584400465782:ios:5d57e3cb314e7692c61457</string>
+	<key>DATABASE_URL</key>
+	<string>https://room-app-d04eb-default-rtdb.asia-southeast1.firebasedatabase.app</string>
+</dict>
+</plist>
