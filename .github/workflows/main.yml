@@ -63,14 +63,8 @@ jobs:
           security list-keychain -d user -s "$KEYCHAIN_PATH"
 
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-
-          PROFILE_UUID=$(
-            security cms -D -i "$PP_PATH" |
-            /usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin
-          )
-
-          cp "$PP_PATH" \
-            ~/Library/MobileDevice/Provisioning\ Profiles/"$PROFILE_UUID".mobileprovision
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< "$(security cms -D -i "$PP_PATH")")
+          cp "$PP_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/"$PROFILE_UUID".mobileprovision
 
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
 
@@ -97,13 +91,10 @@ jobs:
           <dict>
               <key>method</key>
               <string>app-store-connect</string>
-
               <key>teamID</key>
               <string>${{ secrets.APPLE_TEAM_ID }}</string>
-
               <key>signingStyle</key>
               <string>manual</string>
-
               <key>provisioningProfiles</key>
               <dict>
                   <key>com.rooom.talk</key>
@@ -136,9 +127,7 @@ jobs:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
         run: |
           mkdir -p ~/.appstoreconnect/private_keys
-
-          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" \
-            > ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
 
       - name: Upload to App Store Connect
         env:
