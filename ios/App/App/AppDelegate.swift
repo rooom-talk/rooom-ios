@@ -13,8 +13,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
-    // App Store版RoooM：
-    // APNsへの登録成功をCapacitor Push Notificationsへ渡す
+    // APNs登録成功をCapacitor/Firebase Messagingへ通知
     func application(
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
@@ -25,8 +24,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         )
     }
 
-    // App Store版RoooM：
-    // APNsへの登録失敗をCapacitor Push Notificationsへ渡す
+    // APNs登録失敗をCapacitor/Firebase Messagingへ通知
     func application(
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
@@ -34,6 +32,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         NotificationCenter.default.post(
             name: .capacitorDidFailToRegisterForRemoteNotifications,
             object: error
+        )
+    }
+
+    // Firebase Messagingへリモート通知受信を渡す
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        NotificationCenter.default.post(
+            name: Notification.Name("didReceiveRemoteNotification"),
+            object: completionHandler,
+            userInfo: userInfo
         )
     }
 
