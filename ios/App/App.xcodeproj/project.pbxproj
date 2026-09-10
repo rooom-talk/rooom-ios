@@ -18,6 +18,7 @@
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		A1B2C3D42FE1000000000001 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42FE1000000000002 /* GoogleService-Info.plist */; };
 		B7C8D9E02FE2000000000001 /* knock.caf in Resources */ = {isa = PBXBuildFile; fileRef = B7C8D9E02FE2000000000002 /* knock.caf */; };
+		C8D9E0F12FE3000000000001 /* chime.wav in Resources */ = {isa = PBXBuildFile; fileRef = C8D9E0F12FE3000000000002 /* chime.wav */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +35,7 @@
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		A1B2C3D42FE1000000000002 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		B7C8D9E02FE2000000000002 /* knock.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = knock.caf; sourceTree = "<group>"; };
+		C8D9E0F12FE3000000000002 /* chime.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = chime.wav; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,6 +73,7 @@
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				A1B2C3D42FE1000000000002 /* GoogleService-Info.plist */,
 				B7C8D9E02FE2000000000002 /* knock.caf */,
+				C8D9E0F12FE3000000000002 /* chime.wav */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -156,6 +159,7 @@
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
 				A1B2C3D42FE1000000000001 /* GoogleService-Info.plist in Resources */,
 				B7C8D9E02FE2000000000001 /* knock.caf in Resources */,
+				C8D9E0F12FE3000000000001 /* chime.wav in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
