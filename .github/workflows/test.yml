@@ -1,0 +1,194 @@
+name: Build RoooM TEST iOS
+
+on:
+  push:
+    branches:
+      - test
+
+jobs:
+  build-ios-test:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare TEST Capacitor config
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+
+          const path = "capacitor.config.json";
+          const config = JSON.parse(fs.readFileSync(path, "utf8"));
+
+          config.appId = "com.rooom.talk.test";
+          config.appName = "RoooM TEST";
+          config.server = {
+            ...(config.server || {}),
+            url: "https://rooom-test2.web.app",
+            cleartext: false
+          };
+
+          fs.writeFileSync(path, JSON.stringify(config, null, 2) + "\n");
+          NODE
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Sync Capacitor iOS
+        run: npx cap sync ios
+
+      - name: Install TEST Firebase configuration
+        env:
+          GOOGLE_SERVICE_INFO_BASE64: ${{ secrets.IOS_TEST_GOOGLE_SERVICE_INFO_BASE64 }}
+        run: |
+          echo "$GOOGLE_SERVICE_INFO_BASE64" | base64 --decode > ios/App/App/GoogleService-Info.plist
+
+      - name: Set TEST app display name
+        run: |
+          /usr/libexec/PlistBuddy \
+            -c "Set :CFBundleDisplayName RoooM TEST" \
+            ios/App/App/Info.plist
+
+      - name: Install Apple certificate and TEST provisioning profile
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_TEST_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          PP_PATH=$RUNNER_TEMP/build_test_pp.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+
+          echo "$CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PP_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$CERTIFICATE_PATH" \
+            -P "$CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+
+          PROFILE_UUID=$(
+            /usr/libexec/PlistBuddy \
+              -c "Print UUID" \
+              /dev/stdin <<< "$(security cms -D -i "$PP_PATH")"
+          )
+
+          cp "$PP_PATH" \
+            ~/Library/MobileDevice/Provisioning\ Profiles/"$PROFILE_UUID".mobileprovision
+
+          echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
+
+      - name: Create TEST archive
+        run: |
+          cd ios/App
+
+          xcodebuild \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/RoooM-TEST.xcarchive" \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            APP_PROFILE="$PROFILE_UUID" \
+            PRODUCT_BUNDLE_IDENTIFIER="com.rooom.talk.test" \
+            MARKETING_VERSION="1.0" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            clean archive
+
+      - name: Create TEST ExportOptions.plist
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store-connect</string>
+              <key>teamID</key>
+              <string>${{ secrets.APPLE_TEAM_ID }}</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>com.rooom.talk.test</key>
+                  <string>${PROFILE_UUID}</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Export TEST IPA
+        run: |
+          mkdir -p "$RUNNER_TEMP/export"
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$RUNNER_TEMP/RoooM-TEST.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Save TEST IPA as GitHub artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RoooM-TEST-iOS
+          path: ${{ runner.temp }}/export/*.ipa
+          if-no-files-found: error
+
+      - name: Prepare App Store Connect API key
+        env:
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" \
+            > ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
+
+      - name: Upload TEST app to App Store Connect
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          IPA_PATH=$(find "$RUNNER_TEMP/export" -name "*.ipa" -type f | head -1)
+
+          if [ -z "$IPA_PATH" ]; then
+            echo "TEST IPA file not found"
+            exit 1
+          fi
+
+          xcrun altool \
+            --upload-app \
+            --type ios \
+            --file "$IPA_PATH" \
+            --apiKey "$APP_STORE_CONNECT_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
