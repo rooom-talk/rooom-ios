@@ -3,7 +3,7 @@
   "appName": "RoooM Talk",
   "webDir": "dist",
   "server": {
-    "url": "https://rooom-talk.com/?rooom_native_generation=2",
+    "url": "https://rooom-talk.com",
     "cleartext": false
   },
   "plugins": {

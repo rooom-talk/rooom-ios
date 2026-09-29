@@ -34,7 +34,7 @@ jobs:
           config.appName = "RoooM TEST";
           config.server = {
             ...(config.server || {}),
-            url: "https://rooom-test2.web.app/?rooom_native_generation=2",
+            url: "https://rooom-test2.web.app",
             cleartext: false
           };
 
