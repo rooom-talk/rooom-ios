@@ -34,7 +34,7 @@ jobs:
           config.appName = "RoooM TEST";
           config.server = {
             ...(config.server || {}),
-            url: "https://rooom-test2.web.app",
+            url: "https://rooom-test2.web.app/?rooom_native_generation=2",
             cleartext: false
           };
 
@@ -46,6 +46,22 @@ jobs:
 
       - name: Sync Capacitor iOS
         run: npx cap sync ios
+
+      - name: Verify single iOS notification owner
+        run: |
+          echo "Checking synced iOS notification plugins..."
+
+          if grep -R -E -q "PushNotifications|capacitor/push-notifications" ios/App/CapApp-SPM; then
+            echo "ERROR: conflicting Capacitor Push Notifications plugin is still synced"
+            exit 1
+          fi
+
+          if ! grep -R -E -q "FirebaseMessaging|capacitor-firebase.*messaging" ios/App/CapApp-SPM; then
+            echo "ERROR: Firebase Messaging plugin was not synced"
+            exit 1
+          fi
+
+          echo "OK: FirebaseMessaging is the single iOS notification owner"
 
       - name: Install TEST Firebase configuration
         env:

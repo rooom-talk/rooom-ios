@@ -3,12 +3,26 @@
   "appName": "RoooM Talk",
   "webDir": "dist",
   "server": {
-    "url": "https://rooom-talk.com",
+    "url": "https://rooom-talk.com/?rooom_native_generation=2",
     "cleartext": false
   },
   "plugins": {
     "FirebaseMessaging": {
-      "presentationOptions": ["alert", "sound"]
+      "presentationOptions": [
+        "alert",
+        "sound"
+      ]
+    }
+  },
+  "experimental": {
+    "ios": {
+      "spm": {
+        "packageOptions": {
+          "@capacitor-firebase/messaging": {
+            "symlink": true
+          }
+        }
+      }
     }
   }
 }
