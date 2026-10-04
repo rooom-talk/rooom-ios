@@ -22,9 +22,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install TEST iOS keyboard owner
-        run: npm install @capacitor/keyboard@8.0.6
-
       - name: Prepare TEST Capacitor config
         run: |
           node --input-type=module <<'NODE'
@@ -47,11 +44,9 @@ jobs:
           };
 
           config.plugins = {
-            ...(config.plugins || {}),
-            Keyboard: {
-              resize: "native"
-            }
+            ...(config.plugins || {})
           };
+          delete config.plugins.Keyboard;
 
           fs.writeFileSync(path, JSON.stringify(config, null, 2) + "\n");
           NODE
@@ -62,14 +57,24 @@ jobs:
       - name: Sync Capacitor iOS
         run: npx cap sync ios
 
-      - name: Verify TEST keyboard owner
+      - name: Verify TEST iPhone native keyboard owner
         run: |
-          if ! grep -R -E -q "CapacitorKeyboard|KeyboardPlugin|capacitor-keyboard" ios/App/CapApp-SPM; then
-            echo "ERROR: Capacitor Keyboard plugin was not synced"
+          if grep -R -E -q "CapacitorKeyboard|KeyboardPlugin|capacitor-keyboard" ios/App/CapApp-SPM; then
+            echo "ERROR: Capacitor Keyboard plugin must not own TEST iPhone resize"
             exit 1
           fi
 
-          echo "OK: Capacitor Keyboard is the TEST iOS keyboard owner"
+          if ! grep -q "RooomKeyboardContainerViewController" ios/App/App/SceneDelegate.swift; then
+            echo "ERROR: native TEST iPhone keyboard container is missing"
+            exit 1
+          fi
+
+          if ! grep -q "keyboardWillChangeFrameNotification" ios/App/App/SceneDelegate.swift; then
+            echo "ERROR: native TEST iPhone keyboard frame owner is missing"
+            exit 1
+          fi
+
+          echo "OK: UIKit frame animation is the TEST iPhone keyboard owner"
 
       - name: Verify single iOS notification owner
         run: |
