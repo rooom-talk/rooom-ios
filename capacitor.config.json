@@ -8,7 +8,13 @@
   },
   "plugins": {
     "FirebaseMessaging": {
-      "presentationOptions": ["alert", "sound"]
+      "presentationOptions": [
+        "alert",
+        "sound"
+      ]
+    },
+    "Keyboard": {
+      "resize": "none"
     }
   }
 }
