@@ -1,18 +1,11 @@
 import UIKit
 import Capacitor
 
-// TEST iPhone keyboard owner.
+// TEST iOS keyboard owner.
 //
-// Capacitor Keyboard's WebView resize happens as a separate resize step after
-// UIKit has already started moving the keyboard. For a focused WKWebView
-// textarea that can produce a visible compositor rebuild (composer/caret flash).
-//
-// On iPhone we instead keep Capacitor out of keyboard resizing and animate the
-// entire CAPBridgeViewController view with UIKit's own keyboard frame,
-// duration, and curve. The web layout therefore shrinks continuously together
-// with the keyboard, with no JS/native handoff.
-//
-// iPad intentionally keeps the existing direct CAPBridgeViewController path.
+// Keep Capacitor out of keyboard resizing and animate the entire
+// CAPBridgeViewController view with UIKit's own keyboard frame, duration,
+// and curve. iPhone and iPad use this same owner and the same geometry rule.
 final class RooomKeyboardContainerViewController: UIViewController {
     private let bridgeViewController = CAPBridgeViewController()
     private var bridgeBottomConstraint: NSLayoutConstraint!
@@ -101,12 +94,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         window = UIWindow(windowScene: windowScene)
 
-        if UIDevice.current.userInterfaceIdiom == .phone {
-            window?.rootViewController = RooomKeyboardContainerViewController()
-        } else {
-            // Preserve existing iPad behavior.
-            window?.rootViewController = CAPBridgeViewController()
-        }
+        window?.rootViewController = RooomKeyboardContainerViewController()
 
         window?.makeKeyAndVisible()
 
