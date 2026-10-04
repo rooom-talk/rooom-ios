@@ -49,7 +49,7 @@ jobs:
           config.plugins = {
             ...(config.plugins || {}),
             Keyboard: {
-              resize: "body"
+              resize: "native"
             }
           };
 
