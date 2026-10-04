@@ -10,6 +10,7 @@ final class RooomKeyboardContainerViewController: UIViewController {
     private let bridgeViewController = CAPBridgeViewController()
     private var bridgeBottomConstraint: NSLayoutConstraint!
     private var keyboardObserver: NSObjectProtocol?
+    private var keyboardDidChangeObserver: NSObjectProtocol?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -40,28 +41,73 @@ final class RooomKeyboardContainerViewController: UIViewController {
         ) { [weak self] notification in
             self?.applyKeyboardFrame(notification)
         }
+
+        keyboardDidChangeObserver = NotificationCenter.default.addObserver(
+            forName: UIResponder.keyboardDidChangeFrameNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.finishKeyboardFrame(notification)
+        }
     }
 
     deinit {
         if let keyboardObserver {
             NotificationCenter.default.removeObserver(keyboardObserver)
         }
+        if let keyboardDidChangeObserver {
+            NotificationCenter.default.removeObserver(keyboardDidChangeObserver)
+        }
+    }
+
+    private func webViewScrollView() -> UIScrollView? {
+        bridgeViewController.bridge?.webView?.scrollView
+    }
+
+    private func pinWebContentToTop() {
+        guard let scrollView = webViewScrollView() else { return }
+        if scrollView.contentOffset != .zero {
+            scrollView.setContentOffset(.zero, animated: false)
+        }
+    }
+
+    private func setKeyboardOpenClass(_ open: Bool) {
+        let enabled = open ? "true" : "false"
+        let script = """
+        (function(){
+          var root=document.documentElement;
+          if(!root)return;
+          root.classList.toggle('rooom-native-ios-keyboard-lock', (enabled));
+          root.classList.toggle('rooom-keyboard-open', (enabled));
+        })();
+        """
+        bridgeViewController.bridge?.webView?.evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    private func keyboardOverlap(from notification: Notification) -> CGFloat? {
+        guard
+            let userInfo = notification.userInfo,
+            let endFrameScreen = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
+        else {
+            return nil
+        }
+
+        let endFrame = view.convert(endFrameScreen, from: nil)
+        let overlap = max(0, view.bounds.maxY - endFrame.minY)
+        return endFrame.intersects(view.bounds) ? overlap : 0
     }
 
     private func applyKeyboardFrame(_ notification: Notification) {
         guard
             let userInfo = notification.userInfo,
-            let endFrameScreen = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
+            let effectiveOverlap = keyboardOverlap(from: notification)
         else {
             return
         }
 
-        let endFrame = view.convert(endFrameScreen, from: nil)
-        let overlap = max(0, view.bounds.maxY - endFrame.minY)
-
-        // A non-overlapping / off-screen keyboard means fully open web content.
-        let effectiveOverlap = endFrame.intersects(view.bounds) ? overlap : 0
         bridgeBottomConstraint.constant = -effectiveOverlap
+        setKeyboardOpenClass(effectiveOverlap > 0)
+        pinWebContentToTop()
 
         let duration = (userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?.doubleValue ?? 0.25
         let curveRaw = (userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?.uintValue
@@ -74,6 +120,18 @@ final class RooomKeyboardContainerViewController: UIViewController {
             options: [curve, .beginFromCurrentState, .allowUserInteraction]
         ) {
             self.view.layoutIfNeeded()
+            self.pinWebContentToTop()
+        } completion: { [weak self] _ in
+            self?.pinWebContentToTop()
+        }
+    }
+
+    private func finishKeyboardFrame(_ notification: Notification) {
+        guard let effectiveOverlap = keyboardOverlap(from: notification) else { return }
+        setKeyboardOpenClass(effectiveOverlap > 0)
+        pinWebContentToTop()
+        DispatchQueue.main.async { [weak self] in
+            self?.pinWebContentToTop()
         }
     }
 
