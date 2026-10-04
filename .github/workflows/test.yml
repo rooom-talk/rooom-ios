@@ -22,6 +22,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install TEST iOS accessory-bar controller
+        run: npm install @capacitor/keyboard@8.0.6
+
       - name: Prepare TEST Capacitor config
         run: |
           node --input-type=module <<'NODE'
@@ -44,9 +47,11 @@ jobs:
           };
 
           config.plugins = {
-            ...(config.plugins || {})
+            ...(config.plugins || {}),
+            Keyboard: {
+              resize: "none"
+            }
           };
-          delete config.plugins.Keyboard;
 
           fs.writeFileSync(path, JSON.stringify(config, null, 2) + "\n");
           NODE
@@ -57,24 +62,29 @@ jobs:
       - name: Sync Capacitor iOS
         run: npx cap sync ios
 
-      - name: Verify TEST iPhone native keyboard owner
+      - name: Verify TEST iOS keyboard ownership
         run: |
-          if grep -R -E -q "CapacitorKeyboard|KeyboardPlugin|capacitor-keyboard" ios/App/CapApp-SPM; then
-            echo "ERROR: Capacitor Keyboard plugin must not own TEST iPhone resize"
+          if ! grep -R -E -q "CapacitorKeyboard|KeyboardPlugin|capacitor-keyboard" ios/App/CapApp-SPM; then
+            echo "ERROR: Capacitor Keyboard plugin is required to suppress the iPhone form accessory bar"
+            exit 1
+          fi
+
+          if ! grep -q '"resize": "none"' capacitor.config.json; then
+            echo "ERROR: Capacitor Keyboard must stay resize:none so it cannot own geometry"
             exit 1
           fi
 
           if ! grep -q "RooomKeyboardContainerViewController" ios/App/App/SceneDelegate.swift; then
-            echo "ERROR: native TEST iPhone keyboard container is missing"
+            echo "ERROR: native TEST iOS keyboard container is missing"
             exit 1
           fi
 
           if ! grep -q "keyboardWillChangeFrameNotification" ios/App/App/SceneDelegate.swift; then
-            echo "ERROR: native TEST iPhone keyboard frame owner is missing"
+            echo "ERROR: UIKit keyboard frame owner is missing"
             exit 1
           fi
 
-          echo "OK: UIKit frame animation is the TEST iPhone keyboard owner"
+          echo "OK: UIKit owns geometry; Capacitor Keyboard owns accessory-bar suppression only"
 
       - name: Verify single iOS notification owner
         run: |
