@@ -1,10 +1,17 @@
-name: Build RoooM iOS
+name: Build RoooM iOS App Store review candidate
 
 on:
-  workflow_dispatch:
   push:
     branches:
-      - main
+      - release/ios-review-candidate-20261011
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-review-candidate-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build-ios:
@@ -23,11 +30,52 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install verified TEST keyboard accessory controller
+        run: npm install @capacitor/keyboard@8.0.6
+
+      - name: Prepare verified production Capacitor settings
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const file = "capacitor.config.json";
+          const config = JSON.parse(fs.readFileSync(file, "utf8"));
+          if (config.appId !== "com.rooom.talk" ||
+              config.server?.url !== "https://rooom-talk.com" ||
+              config.webDir !== "dist") {
+            throw new Error("REVIEW STOP: app ID, production URL or web directory differs");
+          }
+          config.ios = { ...(config.ios || {}), scrollEnabled: false };
+          config.plugins = {
+            ...(config.plugins || {}),
+            Keyboard: { resize: "none" }
+          };
+          fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n");
+          NODE
+
       - name: Build web app
         run: npm run build
 
       - name: Sync Capacitor iOS
         run: npx cap sync ios
+
+      - name: Guard production identity and verified TEST native owners
+        run: |
+          set -e
+          grep -q 'RooomKeyboardContainerViewController' ios/App/App/SceneDelegate.swift
+          grep -q 'keyboardWillChangeFrameNotification' ios/App/App/SceneDelegate.swift
+          grep -q '"resize": "none"' capacitor.config.json
+          grep -R -E -q 'CapacitorKeyboard|KeyboardPlugin|capacitor-keyboard' ios/App/CapApp-SPM
+          grep -R -E -q 'FirebaseMessaging|capacitor-firebase.*messaging' ios/App/CapApp-SPM
+          if grep -R -E -q 'PushNotifications|capacitor/push-notifications' ios/App/CapApp-SPM; then
+            echo 'REVIEW STOP: duplicate iOS push plugin'
+            exit 1
+          fi
+          test "$(/usr/libexec/PlistBuddy -c 'Print :PROJECT_ID' ios/App/App/GoogleService-Info.plist)" = 'room-app-d04eb'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/App/App/GoogleService-Info.plist)" = 'com.rooom.talk'
+          grep -q 'PRODUCT_BUNDLE_IDENTIFIER = com.rooom.talk;' ios/App/App.xcodeproj/project.pbxproj
+          grep -q 'MARKETING_VERSION = 1.2;' ios/App/App.xcodeproj/project.pbxproj
+          test "$(git hash-object ios/App/App/SceneDelegate.swift)" = '9d0a2dba7357527316cab571d0d1b87672adcc97'
+          echo 'Verified TEST native keyboard, single Messaging owner and production signing identity'
 
       - name: Install Apple certificate and provisioning profile
         env:
@@ -71,6 +119,8 @@ jobs:
       - name: Create archive
         run: |
           cd ios/App
+          BUILD_NUMBER=$((1000 + GITHUB_RUN_NUMBER))
+          echo "Review candidate build number: $BUILD_NUMBER"
 
           xcodebuild \
             -project App.xcodeproj \
@@ -80,6 +130,7 @@ jobs:
             -archivePath "$RUNNER_TEMP/RoooM.xcarchive" \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
             APP_PROFILE="$PROFILE_UUID" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             clean archive
 
       - name: Create ExportOptions.plist
@@ -129,7 +180,8 @@ jobs:
           mkdir -p ~/.appstoreconnect/private_keys
           printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
 
-      - name: Upload to App Store Connect
+      # Build upload only. Review submission and public release are separate manual actions.
+      - name: Upload review candidate to App Store Connect
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
