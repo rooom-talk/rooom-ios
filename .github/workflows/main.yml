@@ -73,7 +73,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :PROJECT_ID' ios/App/App/GoogleService-Info.plist)" = 'room-app-d04eb'
           test "$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/App/App/GoogleService-Info.plist)" = 'com.rooom.talk'
           grep -q 'PRODUCT_BUNDLE_IDENTIFIER = com.rooom.talk;' ios/App/App.xcodeproj/project.pbxproj
-          grep -q 'MARKETING_VERSION = 1.2;' ios/App/App.xcodeproj/project.pbxproj
+          grep -q 'MARKETING_VERSION = 1.3;' ios/App/App.xcodeproj/project.pbxproj
           test "$(git hash-object ios/App/App/SceneDelegate.swift)" = '9d0a2dba7357527316cab571d0d1b87672adcc97'
           echo 'Verified TEST native keyboard, single Messaging owner and production signing identity'
 
@@ -132,6 +132,9 @@ jobs:
             APP_PROFILE="$PROFILE_UUID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             clean archive
+
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx '1.3'
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx 'com.rooom.talk'
 
       - name: Create ExportOptions.plist
         run: |
