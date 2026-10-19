@@ -40,7 +40,7 @@ jobs:
           const file = "capacitor.config.json";
           const config = JSON.parse(fs.readFileSync(file, "utf8"));
           if (config.appId !== "com.rooom.talk" ||
-              config.server?.url !== "https://rooom-talk.com" ||
+              config.server?.url !== "https://rooom-talk.com/?rooom_native_generation=2" ||
               config.webDir !== "dist") {
             throw new Error("REVIEW STOP: app ID, production URL or web directory differs");
           }
@@ -73,7 +73,11 @@ jobs:
           assert.equal(config.ios?.scrollEnabled, true, 'Native WKWebView scrolling must stay enabled');
           assert.equal(config.plugins?.Keyboard?.resize, 'none', 'Verified keyboard policy must stay unchanged');
           assert.equal(config.appId, 'com.rooom.talk');
-          assert.equal(config.server?.url, 'https://rooom-talk.com');
+          assert.equal(config.server?.url, 'https://rooom-talk.com/?rooom_native_generation=2');
+          assert.equal(new URL(config.server.url).origin, 'https://rooom-talk.com');
+          assert.equal(new URL(config.server.url).searchParams.get('rooom_native_generation'), '2');
+          assert.equal(new URL(config.server.url).pathname, '/');
+          assert.equal(config.server?.cleartext, false);
           NODE
           grep -R -E -q 'CapacitorKeyboard|KeyboardPlugin|capacitor-keyboard' ios/App/CapApp-SPM
           grep -R -E -q 'FirebaseMessaging|capacitor-firebase.*messaging' ios/App/CapApp-SPM
@@ -84,7 +88,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :PROJECT_ID' ios/App/App/GoogleService-Info.plist)" = 'room-app-d04eb'
           test "$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/App/App/GoogleService-Info.plist)" = 'com.rooom.talk'
           grep -q 'PRODUCT_BUNDLE_IDENTIFIER = com.rooom.talk;' ios/App/App.xcodeproj/project.pbxproj
-          grep -q 'MARKETING_VERSION = 1.4;' ios/App/App.xcodeproj/project.pbxproj
+          grep -q 'MARKETING_VERSION = 1.5;' ios/App/App.xcodeproj/project.pbxproj
           test "$(git hash-object ios/App/App/SceneDelegate.swift)" = '9d0a2dba7357527316cab571d0d1b87672adcc97'
           echo 'Verified TEST native keyboard, single Messaging owner and production signing identity'
 
@@ -144,7 +148,7 @@ jobs:
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             clean archive
 
-          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx '1.4'
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx '1.5'
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx 'com.rooom.talk'
 
       - name: Create ExportOptions.plist
