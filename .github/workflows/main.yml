@@ -44,7 +44,7 @@ jobs:
               config.webDir !== "dist") {
             throw new Error("REVIEW STOP: app ID, production URL or web directory differs");
           }
-          config.ios = { ...(config.ios || {}), scrollEnabled: false };
+          config.ios = { ...(config.ios || {}), scrollEnabled: true };
           config.plugins = {
             ...(config.plugins || {}),
             Keyboard: { resize: "none" }
@@ -64,6 +64,17 @@ jobs:
           grep -q 'RooomKeyboardContainerViewController' ios/App/App/SceneDelegate.swift
           grep -q 'keyboardWillChangeFrameNotification' ios/App/App/SceneDelegate.swift
           grep -q '"resize": "none"' capacitor.config.json
+          # Keep WKWebView document scrolling enabled on iPhone and iPad.
+          # Top Archive is a document-scroll page; disabling UIScrollView stops it.
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const config = JSON.parse(fs.readFileSync('capacitor.config.json', 'utf8'));
+          assert.equal(config.ios?.scrollEnabled, true, 'Native WKWebView scrolling must stay enabled');
+          assert.equal(config.plugins?.Keyboard?.resize, 'none', 'Verified keyboard policy must stay unchanged');
+          assert.equal(config.appId, 'com.rooom.talk');
+          assert.equal(config.server?.url, 'https://rooom-talk.com');
+          NODE
           grep -R -E -q 'CapacitorKeyboard|KeyboardPlugin|capacitor-keyboard' ios/App/CapApp-SPM
           grep -R -E -q 'FirebaseMessaging|capacitor-firebase.*messaging' ios/App/CapApp-SPM
           if grep -R -E -q 'PushNotifications|capacitor/push-notifications' ios/App/CapApp-SPM; then
