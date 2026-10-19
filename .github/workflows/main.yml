@@ -78,6 +78,18 @@ jobs:
           assert.equal(new URL(config.server.url).searchParams.get('rooom_native_generation'), '2');
           assert.equal(new URL(config.server.url).pathname, '/');
           assert.equal(config.server?.cleartext, false);
+          // Capacitor 8.5: WebViewDelegationHandler compares navigations to the
+          // full serverURL, including the generation query. Explicitly allow the
+          // exact RoooM host so internal pages do not jump to Safari.
+          assert.deepEqual(config.server?.allowNavigation, ['rooom-talk.com'],
+            'Only the production RoooM hostname may navigate inside Native WebView');
+          const allowedByHost = (uri) => config.server.allowNavigation.includes(new URL(uri, config.server.url).hostname);
+          for (const path of ['/', '/room.html?id=sample', '/contact.html', '/?from=room']) {
+            assert.equal(allowedByHost(path), true, 'RoooM navigation must stay inside WKWebView: '+path);
+          }
+          for (const external of ['https://example.com/', 'https://rooom-talk.com.evil.example/']) {
+            assert.equal(allowedByHost(external), false, 'External host must remain outside WKWebView: '+external);
+          }
           NODE
           grep -R -E -q 'CapacitorKeyboard|KeyboardPlugin|capacitor-keyboard' ios/App/CapApp-SPM
           grep -R -E -q 'FirebaseMessaging|capacitor-firebase.*messaging' ios/App/CapApp-SPM
