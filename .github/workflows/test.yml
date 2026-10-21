@@ -199,13 +199,12 @@ jobs:
           path = Path("ios/App/App.xcodeproj/project.pbxproj")
           text = path.read_text()
 
+          if text.count("PRODUCT_BUNDLE_IDENTIFIER = com.rooom.talk;") != 2:
+              raise SystemExit("TEST STOP: expected exactly two production bundle identifiers")
           text = text.replace(
               "PRODUCT_BUNDLE_IDENTIFIER = com.rooom.talk;",
               "PRODUCT_BUNDLE_IDENTIFIER = com.rooom.talk.test;"
           )
-
-          if text.count("PRODUCT_BUNDLE_IDENTIFIER = com.rooom.talk;") != 2:
-              raise SystemExit("TEST STOP: expected exactly two production bundle identifiers")
           if text.count("MARKETING_VERSION = 1.2;") != 2:
               raise SystemExit("TEST STOP: expected exactly two 1.2 source version settings")
           text = text.replace(
