@@ -37,13 +37,14 @@ jobs:
           config.appName = "RoooM TEST";
           config.server = {
             ...(config.server || {}),
-            url: "https://rooom-test2.web.app",
-            cleartext: false
+            url: "https://rooom-test2.web.app/?rooom_native_generation=2",
+            cleartext: false,
+            allowNavigation: ["rooom-test2.web.app"]
           };
 
           config.ios = {
             ...(config.ios || {}),
-            scrollEnabled: false
+            scrollEnabled: true
           };
 
           config.plugins = {
@@ -86,6 +87,30 @@ jobs:
 
           echo "OK: UIKit owns geometry; Capacitor Keyboard owns accessory-bar suppression only"
 
+      - name: Verify TEST Native 1.5 navigation, scroll and TEST2 isolation
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const config = JSON.parse(fs.readFileSync('capacitor.config.json', 'utf8'));
+          const expectedUrl = 'https://rooom-test2.web.app/?rooom_native_generation=2';
+          assert.equal(config.appId, 'com.rooom.talk.test');
+          assert.equal(config.appName, 'RoooM TEST');
+          assert.equal(config.server?.url, expectedUrl);
+          assert.equal(config.server?.cleartext, false);
+          assert.deepEqual(config.server?.allowNavigation, ['rooom-test2.web.app']);
+          assert.equal(config.ios?.scrollEnabled, true, 'Archive document must scroll in WKWebView');
+          assert.equal(config.plugins?.Keyboard?.resize, 'none', 'Keep verified UIKit keyboard ownership');
+          const allowed = (uri) => config.server.allowNavigation.includes(new URL(uri, expectedUrl).hostname);
+          for (const path of ['/', '/room.html?id=sample', '/contact.html', '/?from=room']) {
+            assert.equal(allowed(path), true, 'RoooM TEST navigation must stay inside WKWebView: ' + path);
+          }
+          for (const url of ['https://rooom-talk.com/', 'https://example.com/', 'https://rooom-test2.web.app.evil.example/']) {
+            assert.equal(allowed(url), false, 'External and production hosts must not be internal: ' + url);
+          }
+          NODE
+          echo "OK: TEST2-only identity; Native 1.5 scrolling/navigation parity"
+
       - name: Verify single iOS notification owner
         run: |
           echo "Checking synced iOS notification plugins..."
@@ -107,6 +132,12 @@ jobs:
           GOOGLE_SERVICE_INFO_BASE64: ${{ secrets.IOS_TEST_GOOGLE_SERVICE_INFO_BASE64 }}
         run: |
           echo "$GOOGLE_SERVICE_INFO_BASE64" | base64 --decode > ios/App/App/GoogleService-Info.plist
+
+      - name: Verify TEST Firebase identity
+        run: |
+          test "$(/usr/libexec/PlistBuddy -c 'Print :PROJECT_ID' ios/App/App/GoogleService-Info.plist)" = 'rooom-test2'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/App/App/GoogleService-Info.plist)" = 'com.rooom.talk.test'
+          echo "OK: TEST Firebase project and bundle"
 
       - name: Set TEST app display name
         run: |
@@ -173,9 +204,13 @@ jobs:
               "PRODUCT_BUNDLE_IDENTIFIER = com.rooom.talk.test;"
           )
 
+          if text.count("PRODUCT_BUNDLE_IDENTIFIER = com.rooom.talk;") != 2:
+              raise SystemExit("TEST STOP: expected exactly two production bundle identifiers")
+          if text.count("MARKETING_VERSION = 1.2;") != 2:
+              raise SystemExit("TEST STOP: expected exactly two 1.2 source version settings")
           text = text.replace(
-              "MARKETING_VERSION = 1.1;",
-              "MARKETING_VERSION = 1.0;"
+              "MARKETING_VERSION = 1.2;",
+              "MARKETING_VERSION = 1.5;"
           )
 
           path.write_text(text)
@@ -195,6 +230,9 @@ jobs:
             APP_PROFILE="$PROFILE_UUID" \
             CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             clean archive
+
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$RUNNER_TEMP/RoooM-TEST.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx '1.5'
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$RUNNER_TEMP/RoooM-TEST.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx 'com.rooom.talk.test'
 
       - name: Create TEST ExportOptions.plist
         run: |
