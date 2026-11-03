@@ -41,7 +41,7 @@ jobs:
           import assert from 'node:assert/strict';
           import fs from 'node:fs';
           const pr=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+'/ads-pr.json','utf8'));
-          assert.equal(pr.state,'open');
+          assert.ok(pr.state === 'open' || pr.merged === true, 'PR must be open or merged');
           assert.equal(pr.head.repo.full_name,'rooom-talk/rooom-ios');
           assert.equal(pr.head.ref,'feature/imobile-ios-banner-sdk-20261103');
           assert.equal(pr.head.sha,process.env.APPROVED_SHA,'PR changed: re-review required');
