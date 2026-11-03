@@ -72,7 +72,7 @@ function main(){
     if(newHeader)fs.writeFileSync(destHeader,bridgingHeader,{flag:'wx'});
     if(original!==patched)fs.writeFileSync(pbxPath,patched);
     // Re-check the bytes AFTER copy. GitHub checkout never stores these binaries.
-    for(const rel of Object.keys(expected))verified(path.join(destFramework,rel));
+    for(const rel of Object.keys(expected))verified(path.join(destFramework,rel),rel);
     assert.equal(fs.readFileSync(pbxPath,'utf8'),patched);
     console.log('Verified official i-mobile iOS SDK 2.3.4 staged (binary SHA-256 matches supplied SDK).');
     console.log('Native bridge/project patched; no signing, no TestFlight upload, no public release.');
