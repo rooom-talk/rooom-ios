@@ -4,13 +4,10 @@ import fs from 'node:fs';
 import {patchProject} from '../scripts/prepare-ios-imobile-sdk.mjs';
 
 const pbx=fs.readFileSync('ios/App/App.xcodeproj/project.pbxproj','utf8');
-
 test('i-mobile project staging is strictly additive and reproducible',()=>{
  const next=patchProject(pbx);
  assert.equal(patchProject(next),next);
- for(const key of [
-  'RooomKeyboardContainerViewController', // Scene owner remains separately intact
- ])assert.ok(fs.readFileSync('ios/App/App/SceneDelegate.swift','utf8').includes(key));
+ assert.match(fs.readFileSync('ios/App/App/SceneDelegate.swift','utf8'),/RooomKeyboardContainerViewController/);
  assert.ok(next.includes('ImobileSdkAds.xcframework in Frameworks'));
  assert.equal(next.split('SWIFT_OBJC_BRIDGING_HEADER').length-1,2);
  assert.equal(next.split('ROOOM_IMOBILE_ADS').length-1,2);
@@ -28,15 +25,21 @@ test('i-mobile rejects unrelated or partially prepared Xcode changes',()=>{
  const partial=pbx.replace('MARKETING_VERSION = 1.5;','SWIFT_OBJC_BRIDGING_HEADER = unsafe.h;\nMARKETING_VERSION = 1.5;');
  assert.throws(()=>patchProject(partial));
 });
-test('native i-mobile integration remains opt-in and excludes iPad ad mismatches',()=>{
+test('generalized native bridge is opt-in, origin restricted and SDK-owned',()=>{
  const scene=fs.readFileSync('ios/App/App/SceneDelegate.swift','utf8');
  const ad=fs.readFileSync('ios/App/App/RooomImobileBanner.swift','utf8');
- assert.equal((scene.match(/#if ROOOM_IMOBILE_ADS/g)||[]).length,
-              (scene.match(/#endif/g)||[]).length);
- assert.match(ad,/^#if ROOOM_IMOBILE_ADS/);
- assert.match(ad,/UIDevice\.current\.userInterfaceIdiom == \.phone/);
- assert.match(ad,/private let spotID = "1951334"/);
- assert.match(ad,/setKeyboardVisible/);
+ assert.equal((scene.match(/#if ROOOM_IMOBILE_ADS/g)||[]).length,(scene.match(/#endif/g)||[]).length);
+ assert.match(ad,/#if ROOOM_IMOBILE_ADS\nimport UIKit/);
+ for(const size of ['320, height: 50','320, height: 100','300, height: 250','728, height: 90'])assert.ok(ad.includes(size));
+ assert.match(ad,/WKScriptMessageHandlerWithReply/);
+ assert.match(ad,/message\.frameInfo\.isMainFrame/);
+ assert.match(ad,/origin\.host == "rooom-talk.com"/);
+ assert.match(ad,/private var config = RooomAdConfig.off/);
+ assert.match(ad,/maxSlots = 6/);
+ assert.match(ad,/UISelectionFeedbackGenerator/);
+ assert.match(ad,/addClickFunction/);
+ assert.doesNotMatch(ad,/sendClick\(/);
  assert.match(scene,/RooomKeyboardContainerViewController/);
+ assert.match(scene,/#else\n        bridgeBottomConstraint.constant = -effectiveOverlap/);
  assert.doesNotMatch(ad,/AdSupport\.ASIdentifierManager|ATTrackingManager/);
 });

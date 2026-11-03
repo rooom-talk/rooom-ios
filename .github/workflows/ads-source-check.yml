@@ -1,0 +1,24 @@
+name: Native ads source and policy checks (no upload)
+on:
+  pull_request:
+    paths:
+      - 'ios/App/App/RooomImobileBanner.swift'
+      - 'ios/App/App/SceneDelegate.swift'
+      - 'scripts/*imobile*'
+      - 'scripts/check-ad-source.sh'
+      - 'tests/*'
+      - '.github/workflows/ads-source-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-policy:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check source, Xcode project patcher and pure Swift layout
+        run: sh scripts/check-ad-source.sh
