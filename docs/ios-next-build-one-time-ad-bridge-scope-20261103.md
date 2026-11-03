@@ -8,7 +8,7 @@
 - The uploaded i-mobile iOS SDK **2.3.4** includes `ImobileSdkAdsNativeObject` and `getNativeAdData` with `onNativeAdDataReciveCompleted`, a vendor Swift `NativeInfeedViewController` example using **native UITableView**, and a `sendClick` method documented as used by Unity. RoooM lists are **HTML in a Capacitor WKWebView**, not a UITableView. Their vendor example is NOT a drop-in Web in-feed solution.
 - The SDK's README says 2.3.4 fixes a banner-flick scroll blocker, but that does not prove our WebView overlay scrolling works. Correct impression/click accounting and the permitted use of HTML-rendered SDK asset data must be confirmed with i-mobile before choosing a production integration.
 - The currently inspected Web spot/media (e.g. `597834`) is **NOT** automatically an iPad app spot; app-specific iPad and Native in-feed media/spot IDs must be registered and verified in the AP platform.
-- User's iPad portrait target is a wide fixed bottom creative, ideally **728x90** when supported by the AP inventory/safe area; the older i-mobile SDK guide lists an iPad `768x90` format, so confirm the actual AP choices before committing to numeric dimensions. Don't stretch an existing 468x60 ad.
+- User's iPad portrait target is a wide fixed bottom creative. **Verified** the uploaded SDK 2.3.4 Swift iPad sample (`class/ipad/TableViewControlleriPad.swift`) uses a **728x90** big banner and a **300x250** rectangle. The older PDF's `768x90` figure is inconsistent; use the SDK sample's `728x90` as the implementation target, subject to actual **AP iOS app ad-spot** availability and iPad safe-area width. Never substitute a Web spot or stretch 468x60.
 
 ## One-build native capabilities to ship **together**
 
@@ -47,5 +47,7 @@
 - [ ] Only then merge and upload ONE coherent candidate to TestFlight (no automatic App Store public release).
 
 ## Next action
+
+**Next operator action:** In i-mobile `サイト/アプリ管理`, enter the already approved **iOS app/AP iPhone** media (not the PC Web media). Show the `新規広告スポット` size dropdown before registration so we can confirm the app platform's actual 728x90, 300x250, ネイティブ / ネイティブワイド options. Do not assume there is a separate AP iPad app row: the shipped iOS SDK contains iPad spots in the same Swift iOS app sample. We also need i-mobile written confirmation on in-WKWebView native feed billing/click/impression handling and concurrent SDK spots before publishing.
 
 Do not advance a fixed-banner-only app as the 'final' update. The iPad AP spots and in-feed native spot registration plus the WebView click/impression feasibility gate are prerequisites. No actual app build, PR merge, or server deployment is authorized by this design note.
