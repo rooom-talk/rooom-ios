@@ -161,6 +161,6 @@ jobs:
           echo 'Signed candidate IPA verified on the ephemeral runner. No store upload.'
       - name: Privacy boundary for public GitHub repository
         run: |
-          echo 'NO xcrun altool upload, NO App Store Connect/TestFlight submission.'
+          echo 'NO App Store Connect/TestFlight submission. No publishing commands are present.'
           echo 'NO signed IPA uploaded as a public GitHub Actions artifact.'
           echo 'NO Firebase/Hosting deployment. Ephemeral runner contents discarded.'
