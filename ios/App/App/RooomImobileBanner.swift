@@ -80,8 +80,8 @@ final class RooomImobileBanner: NSObject, IMobileSdkAdsDelegate {
         guard spotId == spotID else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.adReady = true
-            self.refreshBar()
+            // Reserve visible UI space only after the SDK actually shows a creative.
+            // A successful show request is not proof that an ad is on screen.
             if !ImobileSdkAds.show(bySpotID: self.spotID, view: self.creativeView) {
                 self.adReady = false
                 self.refreshBar()
