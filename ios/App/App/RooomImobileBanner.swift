@@ -209,7 +209,7 @@ private final class RooomSdkSlot: NSObject, IMobileSdkAdsDelegate {
         guard spotId == slot.spotId else { return }
         DispatchQueue.main.async { [weak self] in self?.fail() }
     }
-    func onNativeAdDataReciveCompleted(_ spotId: String!, nativeArray: [Any]!) {
+    func onNativeAdDataReciveCompleted(_ spotId: String!, nativeArray: [AnyObject]!) {
         guard spotId == slot.spotId else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.released, let ad = nativeArray?.first as? ImobileSdkAdsNativeObject else { self?.fail(); return }
