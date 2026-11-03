@@ -27,6 +27,16 @@
 - **Configuration contract controlled by Web (conceptual):** `{ enabled, mode: 'tile' | 'fullRow', afterRoomCount, repeatEvery, formatKey, page: 'top' | 'room', devices }`. Native bridge receives an approved `formatKey` and stable slot identity plus element geometry, NOT a hardcoded index. Keep the ad formats allowlisted in the app binary and verify the vendor can supply those formats. Existing room data remains untouched.
 - **Required same-binary acceptance test:** on a single signed TestFlight binary, change only Web configuration to (1) render tile at #5, (2) switch tile to #10, (3) insert fullRow after a full 3-column list row, (4) enable both if SDK permits, (5) switch card/list and 3→2→1 columns, (6) disable ads; all without changing the IPA. Test pagination/sort/filter and WebView scroll/touch/click attribution as well.
 
+## Format support decided from TN's AP iPhone dropdown (2026-11-03)
+
+The i-mobile manager's **AP iPhone media 597836** offers:
+- Inline smartphone banner **320x50** and smartphone big banner **320x100**.
+- Inline medium rectangle **300x250** (display density can also be described as 600x500 pixels for retina).
+- Fullscreen inline/popup, interstitial, and smartphone native wide. These are **different lifecycles / click and impression APIs**, not merely different widths.
+- **No 728x90 choice is visible in the AP iPhone dropdown.** Do not create a smartphone banner and assume it can be presented as an iPad 728x90 ad. Check the actual iPad app media/spot availability with i-mobile first.
+
+**One-binary requirement:** implement an allowlisted, versioned native format factory and Web-configurable placements for currently needed inline sizes (320x50, 320x100, 300x250), separately verified iPad wide banner, and native in-feed / full-row rendering if supported and compliant with the vendor. New spot IDs for these **already implemented and tested formats** should be provided by validated remote Web config instead of requiring a binary edit. The default is OFF for unused formats; there should be zero ad requests when disabled. Explicitly do NOT build speculative fullscreen, popup, or interstitial display flows just because they are in a dropdown: they require distinct user experience and SDK lifecycle, increase review/test burden, and can change the RoooM conversation experience. A new, unsupported ad format, SDK upgrade, new permissions, or Apple privacy requirements may still require a binary update. **Do not promise permanent zero-rebuilds.**
+
 ## Minimal, recoverable architecture
 
 - **Single source of truth:** the Web room renderer inserts objects with discriminated `kind: room | ad`; ad object is never counted as a room, never inherits room actions, never consumes room capacity, and always carries visible `広告 / Ad` marking in all 4 supported languages. Cards/rows use the same outer size/radius/gap as actual rooms, with SDK creative/assets constrained inside that shell. When no fill, remove ad element entirely rather than leaving a fake room/blank hole.
