@@ -1,0 +1,89 @@
+name: iOS i-mobile SDK native compile (NO signing or upload)
+
+on:
+  pull_request:
+    paths:
+      - 'ios/App/App/RooomImobileBanner.swift'
+      - 'ios/App/App/SceneDelegate.swift'
+      - 'scripts/stage-imobile-official-sdk.mjs'
+      - 'scripts/prepare-ios-imobile-sdk.mjs'
+      - '.github/workflows/ads-native-compile.yml'
+      - 'capacitor.config.json'
+      - 'ios/App/App.xcodeproj/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sdk-native-compile:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout RoooM draft PR (never the release branch)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout pinned official i-mobile 2.3.4 SDK (no vendor binary committed)
+        uses: actions/checkout@v4
+        with:
+          repository: imobile/adnw-sdk-ios
+          ref: 736b6edc9ab6e1ada1b0dc557531370cf5923dc8
+          path: vendor-sdk
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install existing verified dependencies
+        run: |
+          npm ci
+          npm install --no-save @capacitor/keyboard@8.0.6
+
+      - name: Preserve verified iOS web/keyboard settings
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import assert from 'node:assert/strict';
+          const name='capacitor.config.json';
+          const c=JSON.parse(fs.readFileSync(name,'utf8'));
+          assert.equal(c.appId,'com.rooom.talk');
+          assert.equal(c.server?.url,'https://rooom-talk.com/?rooom_native_generation=2');
+          assert.deepEqual(c.server?.allowNavigation,['rooom-talk.com']);
+          c.ios={...(c.ios||{}),scrollEnabled:true};
+          c.plugins={...(c.plugins||{}),Keyboard:{resize:'none'}};
+          fs.writeFileSync(name,JSON.stringify(c,null,2)+'\n');
+          NODE
+
+      - name: Build web shell and synchronize native dependencies
+        run: |
+          npm run build
+          npx cap sync ios
+
+      - name: Attach audited official SDK and patch ad-enabled Xcode target
+        run: node scripts/stage-imobile-official-sdk.mjs "$GITHUB_WORKSPACE/vendor-sdk"
+
+      - name: Verify native SDK and compile using Xcode WITHOUT signing
+        run: |
+          set -eo pipefail
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/rooom-imobile-compile" \
+            CODE_SIGNING_ALLOWED=NO \
+            SWIFT_OPTIMIZATION_LEVEL=-Onone \
+            build 2>&1 | tee "$RUNNER_TEMP/rooom-imobile-build.log" | grep -E '(error:|warning:|BUILD SUCCEEDED|BUILD FAILED|RoooM|ImobileSdkAds)' || {
+              echo "Native compilation unsuccessful; see full GitHub Actions log";
+              exit 1;
+            }
+          test -d "$RUNNER_TEMP/rooom-imobile-compile/Build/Products/Debug-iphonesimulator/App.app"
+
+      - name: Security boundary
+        run: |
+          echo 'NO app-signing identity requested, NO IPA exported, NO TestFlight/App Store upload, NO Hosting/Firebase deployment.'
