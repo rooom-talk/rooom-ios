@@ -109,6 +109,11 @@ final class RooomKeyboardContainerViewController: UIViewController {
         return endFrame.intersects(view.bounds) ? overlap : 0
     }
 
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        if bridgeBottomConstraint != nil { updateBridgeBottom() }
+    }
+
     private func updateBridgeBottom() {
 #if ROOOM_IMOBILE_ADS
         let bannerReservation = nativeBanner.reservedBottomHeight
@@ -116,7 +121,7 @@ final class RooomKeyboardContainerViewController: UIViewController {
         let bannerReservation: CGFloat = 0
 #endif
         bridgeBottomConstraint.constant = -(lastKeyboardOverlap + bannerReservation)
-        view.layoutIfNeeded()
+        view.setNeedsLayout()
     }
 
     private func applyKeyboardFrame(_ notification: Notification) {
