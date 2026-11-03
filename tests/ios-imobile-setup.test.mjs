@@ -37,6 +37,8 @@ test('generalized native bridge is opt-in, origin restricted and SDK-owned',()=>
  assert.match(ad,/private var config = RooomAdConfig.off/);
  assert.match(ad,/maxSlots = 6/);
  assert.match(ad,/UISelectionFeedbackGenerator/);
+ assert.match(ad,/onNativeAdDataReciveCompleted\(_ spotId: String!, nativeArray: \[AnyObject\]!\)/);
+ assert.doesNotMatch(ad,/onNativeAdDataReciveCompleted\(_ spotId: String!, nativeArray: \[Any\]!\)/);
  assert.match(ad,/addClickFunction/);
  assert.doesNotMatch(ad,/sendClick\(/);
  assert.match(scene,/RooomKeyboardContainerViewController/);
