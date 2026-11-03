@@ -45,3 +45,15 @@ test('generalized native bridge is opt-in, origin restricted and SDK-owned',()=>
  assert.match(scene,/#else\n        bridgeBottomConstraint.constant = -effectiveOverlap/);
  assert.doesNotMatch(ad,/AdSupport\.ASIdentifierManager|ATTrackingManager/);
 });
+
+test('ad candidate CI archives unsigned and has no Store upload or signing secret exposure',()=>{
+ const src=fs.readFileSync('.github/workflows/ads-native-compile.yml','utf8');
+ assert.match(src,/Archive ad-enabled iOS build without signing or uploading/);
+ assert.match(src,/CODE_SIGNING_ALLOWED=NO/);
+ assert.match(src,/CODE_SIGNING_REQUIRED=NO/);
+ assert.match(src,/RoooM-ads-unsigned\.xcarchive/);
+ assert.match(src,/Print :CFBundleIdentifier/);
+ assert.match(src,/Print :CFBundleShortVersionString/);
+ assert.doesNotMatch(src,/secrets\.|xcrun altool|upload-artifact|app-store-connect/);
+ assert.doesNotMatch(src,/firebase deploy|npx cap run ios/);
+});
