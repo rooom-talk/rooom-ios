@@ -31,9 +31,9 @@ const bridgingHeader=[
   ''
 ].join('\n');
 const sha=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-const verified=file=>{
+const verified=(file,rel)=>{
   const actual=sha(file);
-  assert.equal(actual,expected[path.relative(vendorFramework,file).split(path.sep).join('/')],
+  assert.equal(actual,expected[rel],
     'SDK is not identical to the operator-supplied audited 2.3.4: '+file);
 };
 const vendorDir=process.argv[2] ? path.resolve(process.argv[2]) : '';
@@ -50,14 +50,14 @@ function main(){
   assert.ok(fs.existsSync(vendorFramework),'Official i-mobile xcframework source is missing');
   const commit=execFileSync('git',['-C',vendorDir,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
   assert.equal(commit,officialCommit,'Official SDK Git commit changed; fail closed');
-  for(const rel of Object.keys(expected))verified(path.join(vendorFramework,rel));
+  for(const rel of Object.keys(expected))verified(path.join(vendorFramework,rel),rel);
 
   assert.ok(fs.readFileSync(sceneSrc,'utf8').includes('#if ROOOM_IMOBILE_ADS'),'Native keyboard/advertising owner is missing');
   assert.ok(fs.readFileSync(appSrc,'utf8').includes('RooomMonetization'),'Native SDK coordinator is missing');
   const original=fs.readFileSync(pbxPath,'utf8');
   const patched=patchProject(original); // Fail before touching files if Xcode project drifted.
   if(fs.existsSync(destFramework)){
-    for(const rel of Object.keys(expected))verified(path.join(destFramework,rel));
+    for(const rel of Object.keys(expected))verified(path.join(destFramework,rel),rel);
   }
   if(fs.existsSync(destHeader)){
     assert.equal(fs.readFileSync(destHeader,'utf8'),bridgingHeader,'Unexpected existing Swift bridging header');
