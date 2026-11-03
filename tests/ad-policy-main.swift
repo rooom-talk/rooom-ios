@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 var count = 0
 func check(_ name: String, _ body: () throws -> Void) { do { try body(); count += 1; print("PASS \(name)") } catch { fatalError("FAIL \(name): \(error)") } }
 func slot(_ key: String, _ role: String, _ device: String, _ format: RooomAdFormat, _ id: String) -> RooomAdSlot {
