@@ -1,0 +1,166 @@
+name: RoooM iOS ads signed candidate (manual, no Store upload)
+
+# No push/PR trigger: this workflow never signs or publishes automatically.
+# workflow_dispatch appears after this workflow is included on default branch.
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: "Exact reviewed 40-character head SHA of PR #6"
+        required: true
+        type: string
+      confirmation:
+        description: "Must choose SIGN_ONLY, never upload to App Store Connect"
+        required: true
+        type: choice
+        options: [DO_NOT_SIGN, SIGN_ONLY]
+        default: DO_NOT_SIGN
+
+permissions:
+  contents: read
+concurrency:
+  group: rooom-ios-ads-candidate-sign
+  cancel-in-progress: false
+
+jobs:
+  signed-build:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'SIGN_ONLY'
+    runs-on: macos-latest
+    timeout-minutes: 55
+    steps:
+      - name: Verify the exact approved source is still the same-repository PR #6 HEAD
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          test "$GITHUB_REPOSITORY" = 'rooom-talk/rooom-ios'
+          gh api "repos/$GITHUB_REPOSITORY/pulls/6" > "$RUNNER_TEMP/ads-pr.json"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const pr=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+'/ads-pr.json','utf8'));
+          assert.equal(pr.state,'open');
+          assert.equal(pr.head.repo.full_name,'rooom-talk/rooom-ios');
+          assert.equal(pr.head.ref,'feature/imobile-ios-banner-sdk-20261103');
+          assert.equal(pr.head.sha,process.env.APPROVED_SHA,'PR changed: re-review required');
+          NODE
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+          persist-credentials: false
+      - name: Assert checked-out source SHA
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+      - uses: actions/checkout@v4
+        with:
+          repository: imobile/adnw-sdk-ios
+          ref: 736b6edc9ab6e1ada1b0dc557531370cf5923dc8
+          path: vendor-sdk
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare same reviewed keyboard, notification, web origin and SDK
+        run: |
+          set -e
+          npm ci
+          npm install --no-save @capacitor/keyboard@8.0.6
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const path='capacitor.config.json';
+          const c=JSON.parse(fs.readFileSync(path,'utf8'));
+          assert.equal(c.appId,'com.rooom.talk');
+          assert.equal(c.webDir,'dist');
+          assert.equal(c.server?.url,'https://rooom-talk.com/?rooom_native_generation=2');
+          assert.equal(c.server?.cleartext,false);
+          assert.deepEqual(c.server?.allowNavigation,['rooom-talk.com']);
+          c.ios={...(c.ios||{}),scrollEnabled:true};
+          c.plugins={...(c.plugins||{}),Keyboard:{resize:'none'}};
+          fs.writeFileSync(path,JSON.stringify(c,null,2)+'\n');
+          NODE
+          npm run build
+          npx cap sync ios
+          grep -q 'RooomKeyboardContainerViewController' ios/App/App/SceneDelegate.swift
+          grep -q 'keyboardWillChangeFrameNotification' ios/App/App/SceneDelegate.swift
+          grep -q 'private var config = RooomAdConfig.off' ios/App/App/RooomImobileBanner.swift
+          grep -R -E -q 'FirebaseMessaging|capacitor-firebase.*messaging' ios/App/CapApp-SPM
+          if grep -R -E -q 'PushNotifications|capacitor/push-notifications' ios/App/CapApp-SPM; then exit 1; fi
+          test "$(/usr/libexec/PlistBuddy -c 'Print :PROJECT_ID' ios/App/App/GoogleService-Info.plist)" = 'room-app-d04eb'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/App/App/GoogleService-Info.plist)" = 'com.rooom.talk'
+          node scripts/stage-imobile-official-sdk.mjs "$GITHUB_WORKSPACE/vendor-sdk"
+
+      - name: Install existing distribution certificate and provisioning profile
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          CERT="$RUNNER_TEMP/ios-candidate.p12"
+          PROFILE="$RUNNER_TEMP/ios-candidate.mobileprovision"
+          KEYCHAIN="$RUNNER_TEMP/ios-candidate.keychain-db"
+          PASSWORD="$(openssl rand -base64 32)"
+          printf '%s' "$CERTIFICATE_BASE64" | base64 --decode > "$CERT"
+          printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PROFILE"
+          test -s "$CERT"; test -s "$PROFILE"
+          security create-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security import "$CERT" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          security cms -D -i "$PROFILE" > "$RUNNER_TEMP/profile.plist"
+          PROFILE_UUID="$(/usr/libexec/PlistBuddy -c 'Print UUID' "$RUNNER_TEMP/profile.plist")"
+          cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
+
+      - name: Signed version 1.6 IPA candidate (never uploaded to App Store)
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          BUILD_NUMBER=$((2000 + GITHUB_RUN_NUMBER))
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/RoooM-ads-signed.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" APP_PROFILE="$PROFILE_UUID" \
+            MARKETING_VERSION=1.6 CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            clean archive > "$RUNNER_TEMP/archive.log" 2>&1 || {
+              grep -E '(error:|ARCHIVE FAILED)' "$RUNNER_TEMP/archive.log" | tail -n 60 || true; exit 1;
+            }
+          grep -F '** ARCHIVE SUCCEEDED **' "$RUNNER_TEMP/archive.log"
+          APP="$RUNNER_TEMP/RoooM-ads-signed.xcarchive/Products/Applications/App.app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = 'com.rooom.talk'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")" = '1.6'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist")" = "$BUILD_NUMBER"
+          codesign --verify --deep --strict "$APP"
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>method</key><string>app-store-connect</string>
+          <key>teamID</key><string>$APPLE_TEAM_ID</string>
+          <key>signingStyle</key><string>manual</string>
+          <key>provisioningProfiles</key><dict><key>com.rooom.talk</key><string>$PROFILE_UUID</string></dict>
+          </dict></plist>
+          EOF
+          mkdir -p "$RUNNER_TEMP/export"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/RoooM-ads-signed.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            > "$RUNNER_TEMP/export.log" 2>&1 || {
+              grep -E '(error:|EXPORT FAILED)' "$RUNNER_TEMP/export.log" | tail -n 60 || true; exit 1;
+            }
+          test "$(find "$RUNNER_TEMP/export" -type f -name '*.ipa' | wc -l | tr -d ' ')" = 1
+          echo 'Signed candidate IPA verified on the ephemeral runner. No store upload.'
+      - name: Privacy boundary for public GitHub repository
+        run: |
+          echo 'NO xcrun altool upload, NO App Store Connect/TestFlight submission.'
+          echo 'NO signed IPA uploaded as a public GitHub Actions artifact.'
+          echo 'NO Firebase/Hosting deployment. Ephemeral runner contents discarded.'
