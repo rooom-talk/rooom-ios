@@ -11,6 +11,10 @@ final class RooomKeyboardContainerViewController: UIViewController {
     private var bridgeBottomConstraint: NSLayoutConstraint!
     private var keyboardObserver: NSObjectProtocol?
     private var keyboardDidChangeObserver: NSObjectProtocol?
+    private var lastKeyboardOverlap: CGFloat = 0
+#if ROOOM_IMOBILE_ADS
+    private let nativeBanner = RooomImobileBanner()
+#endif
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -33,6 +37,14 @@ final class RooomKeyboardContainerViewController: UIViewController {
         ])
 
         bridgeViewController.didMove(toParent: self)
+
+#if ROOOM_IMOBILE_ADS
+        // Native banner sits outside the WKWebView. Keep existing keyboard owner.
+        nativeBanner.onReservedHeightChange = { [weak self] in
+            self?.updateBridgeBottom()
+        }
+        nativeBanner.install(in: view)
+#endif
 
         keyboardObserver = NotificationCenter.default.addObserver(
             forName: UIResponder.keyboardWillChangeFrameNotification,
@@ -97,6 +109,16 @@ final class RooomKeyboardContainerViewController: UIViewController {
         return endFrame.intersects(view.bounds) ? overlap : 0
     }
 
+    private func updateBridgeBottom() {
+#if ROOOM_IMOBILE_ADS
+        let bannerReservation = nativeBanner.reservedBottomHeight
+#else
+        let bannerReservation: CGFloat = 0
+#endif
+        bridgeBottomConstraint.constant = -(lastKeyboardOverlap + bannerReservation)
+        view.layoutIfNeeded()
+    }
+
     private func applyKeyboardFrame(_ notification: Notification) {
         guard
             let userInfo = notification.userInfo,
@@ -105,7 +127,11 @@ final class RooomKeyboardContainerViewController: UIViewController {
             return
         }
 
-        bridgeBottomConstraint.constant = -effectiveOverlap
+        lastKeyboardOverlap = effectiveOverlap
+#if ROOOM_IMOBILE_ADS
+        nativeBanner.setKeyboardVisible(effectiveOverlap > 0)
+#endif
+        updateBridgeBottom()
         setKeyboardOpenClass(effectiveOverlap > 0)
         pinWebContentToTop()
 
@@ -128,6 +154,11 @@ final class RooomKeyboardContainerViewController: UIViewController {
 
     private func finishKeyboardFrame(_ notification: Notification) {
         guard let effectiveOverlap = keyboardOverlap(from: notification) else { return }
+        lastKeyboardOverlap = effectiveOverlap
+#if ROOOM_IMOBILE_ADS
+        nativeBanner.setKeyboardVisible(effectiveOverlap > 0)
+#endif
+        updateBridgeBottom()
         setKeyboardOpenClass(effectiveOverlap > 0)
         pinWebContentToTop()
         DispatchQueue.main.async { [weak self] in
