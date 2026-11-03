@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 // Shared, deterministic geometry/configuration policy. UIKit is not needed to test it.
 enum RooomAdFormat: String, Codable {
