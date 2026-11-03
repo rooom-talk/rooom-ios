@@ -103,6 +103,34 @@ jobs:
           grep -F '** BUILD SUCCEEDED **' "$RUNNER_TEMP/rooom-imobile-device-build.log"
           test -d "$RUNNER_TEMP/rooom-imobile-compile/Build/Products/Release-iphoneos/App.app"
 
+      - name: Archive ad-enabled iOS build without signing or uploading
+        run: |
+          set -e
+          if ! xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/RoooM-ads-unsigned.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/rooom-imobile-compile" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            archive > "$RUNNER_TEMP/rooom-imobile-archive.log" 2>&1; then
+            echo 'Unsigned archive failed:'
+            grep -E '(error:|ARCHIVE FAILED)' "$RUNNER_TEMP/rooom-imobile-archive.log" | tail -n 60 || true
+            exit 1
+          fi
+          grep -F '** ARCHIVE SUCCEEDED **' "$RUNNER_TEMP/rooom-imobile-archive.log"
+          APP="$RUNNER_TEMP/RoooM-ads-unsigned.xcarchive/Products/Applications/App.app"
+          test -d "$APP"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = 'com.rooom.talk'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")" = '1.5'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")" = 'App'
+          test -f "$APP/App"
+          test ! -e "$APP/embedded.mobileprovision"
+          echo 'Unsigned archive metadata passed: production bundle identity, version 1.5, executable present.'
+          echo 'Archive is NOT signed/installable and is deliberately NOT uploaded as an artifact.'
+
       - name: Security boundary
         run: |
           echo 'NO app-signing identity requested, NO IPA exported, NO TestFlight/App Store upload, NO Hosting/Firebase deployment.'
