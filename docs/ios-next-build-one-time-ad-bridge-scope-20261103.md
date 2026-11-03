@@ -2,6 +2,10 @@
 
 **Owner request (2026-11-03 JST):** Prepare the next TestFlight build so later ad insertions/reordering in the RoooM room-card / room-list views require only web code changes, not another iOS binary build. It also must include the initial iPhone/iPad native fixed placements and wheel haptic feedback. The in-feed card must have the same row/card shell geometry as the neighboring rooms; it is a real ad slot, not a room.
 
+## Android parity requirement (TN, 2026-11-03)
+
+This iOS implementation must be designed together with [Android architecture PR #441](https://github.com/rooom-talk/rooom-app/pull/441). All ad placements (`bottom`, `rail`, `tile`, `fullRow`) and Web-controlled insertion indexes/cadence/kill switch must have a platform-neutral Web contract; do not hardwire iOS-only logic into the common room renderer. Android is **TWA**, not an Android WebView, so the ad SDK/native screen compositor strategy has NOT been confirmed. The Android app is currently portrait-primary; do not promise tablet landscape parity without Android orientation and TWA verification. Keep Android and iOS native adapters independent but agree on the format/slot capability schema before app builds.
+
 ## Clear boundary and current status
 
 - Existing draft PR #6 only stages an **iPhone 320x50 fixed banner** and a local Mac-only i-mobile SDK installer. It DOES NOT implement the bridge, iPad spots, in-feed ads, or haptics. Keep PR draft and do not trigger the release candidate's automatic App Store Connect upload.
