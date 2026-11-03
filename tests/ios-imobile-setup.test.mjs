@@ -57,3 +57,18 @@ test('ad candidate CI archives unsigned and has no Store upload or signing secre
  assert.doesNotMatch(src,/secrets\.|xcrun altool|upload-artifact|app-store-connect/);
  assert.doesNotMatch(src,/firebase deploy|npx cap run ios/);
 });
+
+test('signing uses explicit manual dispatch, reviewed PR SHA, and never uploads an IPA',()=>{
+ const ci=fs.readFileSync('.github/workflows/ads-signed-candidate.yml','utf8');
+ assert.match(ci,/on:\n  workflow_dispatch:/);
+ assert.doesNotMatch(ci,/\n\s+(?:push|pull_request):/);
+ assert.match(ci,/inputs\.confirmation == 'SIGN_ONLY'/);
+ assert.match(ci,/pr\.head\.sha,process\.env\.APPROVED_SHA/);
+ assert.match(ci,/source SHA|approved_sha/i);
+ assert.match(ci,/node scripts\/stage-imobile-official-sdk\.mjs/);
+ assert.match(ci,/clean archive/);
+ assert.match(ci,/codesign --verify --deep --strict/);
+ assert.match(ci,/CFBundleShortVersionString/);
+ assert.match(ci,/NO App Store Connect\/TestFlight submission/);
+ assert.doesNotMatch(ci,/xcrun altool|upload-artifact@|firebase deploy|fastlane pilot|notarytool/);
+});
