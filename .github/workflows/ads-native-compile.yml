@@ -84,6 +84,25 @@ jobs:
             }
           test -d "$RUNNER_TEMP/rooom-imobile-compile/Build/Products/Debug-iphonesimulator/App.app"
 
+      - name: Also compile iPhone/iPad device ARM64 in Release mode (unsigned)
+        run: |
+          set -e
+          if ! xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/rooom-imobile-compile" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build > "$RUNNER_TEMP/rooom-imobile-device-build.log" 2>&1; then
+            echo 'Unsigned Release ARM64 device build failed:'
+            grep -E '(error:|BUILD FAILED)' "$RUNNER_TEMP/rooom-imobile-device-build.log" | tail -n 60 || true
+            exit 1
+          fi
+          grep -F '** BUILD SUCCEEDED **' "$RUNNER_TEMP/rooom-imobile-device-build.log"
+          test -d "$RUNNER_TEMP/rooom-imobile-compile/Build/Products/Release-iphoneos/App.app"
+
       - name: Security boundary
         run: |
           echo 'NO app-signing identity requested, NO IPA exported, NO TestFlight/App Store upload, NO Hosting/Firebase deployment.'
