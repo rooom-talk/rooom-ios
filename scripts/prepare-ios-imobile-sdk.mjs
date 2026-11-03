@@ -112,5 +112,5 @@ function main(){
   console.log('NEXT: run xcodebuild in an isolated ad-enabled test candidate and verify keyboard + push.');
  }finally{fs.rmSync(tmp,{recursive:true,force:true});}
 }
-main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
 export {patchProject};
