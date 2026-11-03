@@ -22,6 +22,12 @@ AppDelegate/FCM, app identity, entitlements, Info.plist orientation, Capacitor s
 - Companion rooom-app shared tests: **11 Node tests PASS**, **8 offline Chromium mock-ad scenario groups PASS**, including actual existing keyed and legacy renderers, tile/fullRow, 3/2/1 columns, re-render/no duplicate request, no-fill, empty during pending load, modal occlusion and existing wheel feedback event.
 - Updated installer source tests and a separate `ads-source-check.yml` workflow are provided. This workflow performs source/policy checks only and contains no signing secrets, App Store upload, Firebase changes, or vendor-network request. Its actual hosted result is separate from local evidence.
 
+## Additional vendor-API audit (2026-11-03)
+
+- Compared the real uploaded i-mobile **iOS SDK 2.3.4** arm64 header (`ImobileSdkAds.h`) against the shipped Swift `NativeWideViewController.swift` sample and the implementation candidate. Found the callback declaration `onNativeAdDataReciveCompleted(_ spotId: String!, nativeArray: [Any]!)` differed from the sample's `nativeArray: [AnyObject]!`. Corrected the implementation to the vendor-sample signature and added a regression assertion to `tests/ios-imobile-setup.test.mjs`. This is the **vendor sample's advertised Swift signature**; only an actual Mac native/SDK typecheck confirms the bridge with the currently installed Xcode. The released bundle is still untouched.
+- The updated GitHub macOS source/policy workflow **41623472624** completed successfully on commit `3f0616076e334d3793a68cdd8d49487b6255b950`, following the fix and regression test. This runs Swift source/policy checks, **not a full iOS SDK/UIKit link/archive**. It neither uploaded nor signed an IPA.
+- Exact next technical gate: provide the licensed SDK ZIP via a **private Mac build workspace**, run `node scripts/prepare-ios-imobile-sdk.mjs <ZIP>`, then `xcodebuild` with the patched project and confirm vendor delegate, safe area and SDK binary compatibility. Do **not** add the licensed framework to the public GitHub repository merely to make CI convenient. During this preparation, check the prior `MARKETING_VERSION`/SceneDelegate hashes and store auto-upload guard before permitting any release workflow.
+
 ## Not ready to release
 
 1. Real Mac/Xcode SDK typecheck/link/archive has NOT run here. Source parser success is not SDK compatibility proof.
