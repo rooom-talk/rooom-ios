@@ -86,6 +86,11 @@ test('iOS 1.6 TestFlight upload uses the existing Mac workflow, manual only and 
  assert.match(ci,/node scripts\/stage-imobile-official-sdk\.mjs/);
  assert.match(ci,/ROOOM_TESTFLIGHT_BUILD_NUMBER/);
  assert.match(ci,/Apple build lookup HTTP/);
+ assert.match(ci,/const expectedAppId='6800222762';/);
+ assert.match(ci,/const expectedBundleId='com\.rooom\.talk';/);
+ assert.match(ci,/app\.data\?\.attributes\?\.bundleId/);
+ assert.match(ci,/STOP: Apple app does not match RoooM bundle ID/);
+ assert.doesNotMatch(ci,/\/v1\/apps\?filter/);
  assert.match(ci,/\/v1\/apps\/.*\/builds\?limit=200/);
  assert.match(ci,/MARKETING_VERSION=1\.6/);
  assert.match(ci,/rooom_native_generation=3/);
