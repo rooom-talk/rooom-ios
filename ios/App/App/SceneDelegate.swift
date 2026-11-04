@@ -6,6 +6,7 @@ final class RooomKeyboardContainerViewController: UIViewController {
 #if ROOOM_IMOBILE_ADS
     private let bridgeViewController = RooomAdsBridgeViewController()
     private var bridgeLeadingConstraint: NSLayoutConstraint!
+    private var bridgeTrailingConstraint: NSLayoutConstraint!
     private var lastKeyboardOverlap: CGFloat = 0
 #else
     private let bridgeViewController = CAPBridgeViewController()
@@ -33,10 +34,11 @@ final class RooomKeyboardContainerViewController: UIViewController {
         bridgeBottomConstraint = bridgeView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
 #if ROOOM_IMOBILE_ADS
         bridgeLeadingConstraint = bridgeView.leadingAnchor.constraint(equalTo: view.leadingAnchor)
+        bridgeTrailingConstraint = bridgeView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         NSLayoutConstraint.activate([
             bridgeView.topAnchor.constraint(equalTo: view.topAnchor),
             bridgeLeadingConstraint,
-            bridgeView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bridgeTrailingConstraint,
             bridgeBottomConstraint
         ])
         bridgeViewController.adReservationChanged = { [weak self] _ in self?.updateBridgeBottom() }
@@ -95,10 +97,12 @@ final class RooomKeyboardContainerViewController: UIViewController {
         bridgeViewController.monetization?.layout()
     }
     private func updateBridgeBottom() {
-        guard bridgeBottomConstraint != nil, bridgeLeadingConstraint != nil else { return }
+        guard bridgeBottomConstraint != nil, bridgeLeadingConstraint != nil,
+              bridgeTrailingConstraint != nil else { return }
         let reserved = bridgeViewController.monetization?.reservation ?? RooomAdInsets()
         bridgeBottomConstraint.constant = -(lastKeyboardOverlap + reserved.bottom)
         bridgeLeadingConstraint.constant = reserved.left
+        bridgeTrailingConstraint.constant = -reserved.right
         view.setNeedsLayout()
     }
 #endif
