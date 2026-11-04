@@ -1,0 +1,31 @@
+name: One-time iOS 1.6 TestFlight dispatch (no public release)
+on:
+  push:
+    branches:
+      - automation/ios16-testflight-dispatch-20261104
+    paths:
+      - .github/workflows/one-time-ios16-dispatch.yml
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  dispatch-once:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify immutable approved release SHA and dispatch TestFlight only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: 1fc43a5d02948b7323953ffae843d2537449f965
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/automation/ios16-testflight-dispatch-20261104"
+          ACTUAL_SHA="$(gh api repos/rooom-talk/rooom-ios/branches/release/ios-review-candidate-20261011 --jq '.commit.sha')"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA" || { echo "STOP: release branch changed"; exit 1; }
+          gh api --method POST "repos/rooom-talk/rooom-ios/actions/workflows/main.yml/dispatches" \
+            -f ref="release/ios-review-candidate-20261011" \
+            -f 'inputs[approved_sha]'="$EXPECTED_SHA" \
+            -f 'inputs[confirmation]'="UPLOAD_TESTFLIGHT"
+          echo "Dispatched only the approved iOS 1.6 TestFlight candidate at $EXPECTED_SHA"
