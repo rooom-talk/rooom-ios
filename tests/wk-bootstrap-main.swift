@@ -38,7 +38,7 @@ let window = NSWindow(contentRect:web.frame,styleMask:[.titled],backing:.buffere
 window.contentView=web
 window.orderFront(nil)
 let url = external ? "https://example.com/room.html" : home ? "https://rooom-talk.com/" : "https://rooom-talk.com/room.html"
-web.loadHTMLString("<!doctype html><html><head></head><body></body></html>",baseURL:URL(string:url)!)
+web.loadHTMLString("<!doctype html><html><head><style>:root{--bg:#efefef}:root.rooom-dark-theme{--bg:#171717}</style></head><body></body></html>",baseURL:URL(string:url)!)
 var finished = false
 var passed = false
 var attempts = 0
@@ -49,6 +49,7 @@ let timer = Timer.scheduledTimer(withTimeInterval:0.5,repeats:true) { timer in
         if let data=text.data(using:.utf8), let record=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any] {
             passed = record["marker"] as? String == "1" && record["css"] as? Bool == true && probe.calls.contains("configure")
             if !baseline { passed = passed && (record["classes"] as? String ?? "").contains("ipad-device") }
+            if !baseline && !phone && !external { passed = passed && probe.calls.contains("background") }
             if !baseline && (phone || home || external) {
                 passed = record["marker"] is NSNull && !(record["classes"] as? String ?? "").contains("ipad-device")
                     && (external ? attempts >= 4 && probe.calls.isEmpty : probe.calls.contains("configure"))

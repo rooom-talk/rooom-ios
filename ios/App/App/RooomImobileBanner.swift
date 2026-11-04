@@ -132,6 +132,40 @@ enum RooomAdBootstrap {
                 console.warn('RoooM iPad layout module unavailable', String(error));
               }
             }
+            // Native rail is outside WKWebView. Match its background to the
+            // actual first-party RoooM CSS theme, even when no ad is filled.
+            // This changes only appearance; never changes a placement/reservation.
+            if (\(isTablet ? "true" : "false") && !window.__rooomNativeRailBackgroundSync) {
+              window.__rooomNativeRailBackgroundSync = true;
+              const syncRailBackground = function() {
+                try {
+                  const root = document.documentElement;
+                  const css = getComputedStyle(root);
+                  const value = css.getPropertyValue('--bg').trim();
+                  if (!value) return;
+                  const probe = document.createElement('span');
+                  probe.style.backgroundColor = value;
+                  (document.body || root).appendChild(probe);
+                  const rgb = getComputedStyle(probe).backgroundColor;
+                  probe.remove();
+                  const match = /^rgba?\\(\\s*(\\d+)\\s*[, ]+\\s*(\\d+)\\s*[, ]+\\s*(\\d+)/.exec(rgb);
+                  if (!match) return;
+                  const channels = match.slice(1,4).map(Number);
+                  if (channels.some(v => !Number.isInteger(v) || v < 0 || v > 255)) return;
+                  window.webkit?.messageHandlers?.rooomMonetization?.postMessage({
+                    version:1, op:'background', rgb:channels
+                  });
+                } catch (_) {}
+              };
+              syncRailBackground();
+              new MutationObserver(syncRailBackground).observe(document.documentElement,{
+                attributes:true, attributeFilter:['class','data-theme']
+              });
+              // Some routes update body classes instead of the root theme.
+              if (document.body) new MutationObserver(syncRailBackground).observe(document.body,{
+                attributes:true, attributeFilter:['class','style']
+              });
+            }
             try {
               const ads = await import('https://rooom-talk.com/src/features/ads/page-ad-runtime.mjs');
               ads.pageAdvertising();
@@ -426,6 +460,17 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
             switch op {
             case "capabilities": reply(["version":1,"implemented":true,"platform":"ios","device":engine.device,
                 "formats":["banner","largeBanner","rectangle","tabletBanner","native"],"maxSlots":RooomAdPolicy.maxSlots],nil)
+            case "background":
+                // Appearance only: restricted to the existing trusted first-party
+                // main-frame handler. Reject malformed/oversized color data.
+                guard let values = body["rgb"] as? [NSNumber], values.count == 3,
+                      values.allSatisfy({ $0.intValue >= 0 && $0.intValue <= 255 &&
+                          $0.doubleValue == Double($0.intValue) }) else { throw RooomAdError.invalidRequest }
+                let color = UIColor(red: CGFloat(values[0].intValue) / 255,
+                    green: CGFloat(values[1].intValue) / 255,
+                    blue: CGFloat(values[2].intValue) / 255, alpha: 1)
+                self.parent?.view.backgroundColor = color
+                reply(["ok":true],nil)
             case "configure":
                 guard let value = body["config"], JSONSerialization.isValidJSONObject(value) else { throw RooomAdError.invalidConfig }
                 let data = try JSONSerialization.data(withJSONObject: value)
