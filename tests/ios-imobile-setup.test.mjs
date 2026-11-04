@@ -118,3 +118,23 @@ test('unfilled native ad rail inherits RoooM body theme without changing ad rese
  assert.match(ad,/let roles = device == "phone" \? \["phone.bottom"\]/);
  assert.match(ad,/\? \["tablet.left.top", "tablet.left.bottom"\] : \["tablet.bottom"\]/);
 });
+
+test('iPad ad geometry is configurable from Web, with legacy defaults and right-side UIKit reservation',()=>{
+ const ad=fs.readFileSync('ios/App/App/RooomImobileBanner.swift','utf8');
+ const scene=fs.readFileSync('ios/App/App/SceneDelegate.swift','utf8');
+ assert.match(ad,/struct RooomAdPresentation: Codable, Equatable/);
+ assert.match(ad,/var presentation: RooomAdPresentation\? = nil/);
+ assert.match(ad,/let look = config\.presentation \?\? \.standard/);
+ assert.match(ad,/look\.railWidth/);
+ assert.match(ad,/look\.railPadding/);
+ assert.match(ad,/look\.railTop/);
+ assert.match(ad,/look\.railGap/);
+ assert.match(ad,/look\.bottomGap/);
+ assert.match(ad,/out\.reserved\.right = safe\.right \+ look\.railWidth/);
+ assert.match(scene,/bridgeTrailingConstraint/);
+ assert.match(scene,/bridgeTrailingConstraint\.constant = -reserved\.right/);
+ // Native must keep publisher SDK registration, click handling, and keyboard ownership.
+ assert.match(ad,/ImobileSdkAds\.register/);
+ assert.match(ad,/ImobileSdkAds\.show/);
+ assert.match(scene,/setKeyboardVisible\(effectiveOverlap > 0\)/);
+});
