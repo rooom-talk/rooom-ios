@@ -39,7 +39,7 @@ struct RooomAdConfig: Codable, Equatable {
             let valid: Bool
             switch s.role {
             case "phone.bottom": valid = s.device == "phone" && [.banner, .largeBanner].contains(s.format)
-            case "tablet.bottom": valid = s.device == "tablet" && s.format == .tabletBanner
+            case "tablet.bottom": valid = s.device == "tablet" && [.banner, .tabletBanner].contains(s.format)
             case "tablet.left.top", "tablet.left.bottom": valid = s.device == "tablet" && s.format == .rectangle
             case "archive.tile", "archive.row": valid = s.format == .native
             default: valid = false
@@ -83,8 +83,12 @@ enum RooomAdPolicy {
         var out = RooomAdLayout()
         guard config.enabled, config.fixed, !keyboard, bounds.width.isFinite, bounds.height.isFinite,
               bounds.width > 0, bounds.height > 0 else { return out }
-        let roles = device == "phone" ? ["phone.bottom"] : bounds.width > bounds.height
-            ? ["tablet.left.top", "tablet.left.bottom"] : ["tablet.bottom"]
+        // Optional compact iPad banner uses the phone's 320x50 geometry, but
+        // the approved landscape 300x250 LEFT rail retains priority.
+        let railRoles = ["tablet.left.top", "tablet.left.bottom"]
+        let useTabletRail = device == "tablet" && bounds.width > bounds.height &&
+            config.slots.contains(where: { $0.device == "tablet" && railRoles.contains($0.role) })
+        let roles = device == "phone" ? ["phone.bottom"] : useTabletRail ? railRoles : ["tablet.bottom"]
         for role in roles {
             guard let s = config.slots.first(where: { $0.device == device && $0.role == role }),
                   readyKeys == nil || readyKeys!.contains(s.key) else { continue }
