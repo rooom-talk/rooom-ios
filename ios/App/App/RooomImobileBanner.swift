@@ -469,7 +469,7 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
                 let color = UIColor(red: CGFloat(values[0].intValue) / 255,
                     green: CGFloat(values[1].intValue) / 255,
                     blue: CGFloat(values[2].intValue) / 255, alpha: 1)
-                owner.parent?.view.backgroundColor = color
+                self.parent?.view.backgroundColor = color
                 reply(["ok":true],nil)
             case "configure":
                 guard let value = body["config"], JSONSerialization.isValidJSONObject(value) else { throw RooomAdError.invalidConfig }
