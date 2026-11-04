@@ -22,3 +22,10 @@ jobs:
           node-version: 22
       - name: Check source, Xcode project patcher and pure Swift layout
         run: sh scripts/check-ad-source.sh
+      - name: Exercise document-end native bootstrap in real WKWebView (no SDK or Firebase writes)
+        run: |
+          set -eu
+          cp tests/wk-bootstrap-main.swift "$RUNNER_TEMP/main.swift"
+          swiftc ios/App/App/RooomImobileBanner.swift "$RUNNER_TEMP/main.swift" -o "$RUNNER_TEMP/wk-bootstrap"
+          "$RUNNER_TEMP/wk-bootstrap" --baseline
+          "$RUNNER_TEMP/wk-bootstrap"
