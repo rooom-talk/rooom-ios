@@ -52,7 +52,7 @@ jobs:
           const name='capacitor.config.json';
           const c=JSON.parse(fs.readFileSync(name,'utf8'));
           assert.equal(c.appId,'com.rooom.talk');
-          assert.equal(c.server?.url,'https://rooom-talk.com/?rooom_native_generation=2');
+          assert.equal(c.server?.url,'https://rooom-talk.com/?rooom_native_generation=3');
           assert.deepEqual(c.server?.allowNavigation,['rooom-talk.com']);
           c.ios={...(c.ios||{}),scrollEnabled:true};
           c.plugins={...(c.plugins||{}),Keyboard:{resize:'none'}};
