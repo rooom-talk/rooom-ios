@@ -89,8 +89,7 @@ enum RooomAdPolicy {
         let roles = device == "phone" ? ["phone.bottom"] : landscapeTablet
             ? ["tablet.left.top", "tablet.left.bottom"] : ["tablet.bottom"]
         for role in roles {
-            guard let s = config.slots.first(where: { $0.device == device && $0.role == role }),
-                  readyKeys == nil || readyKeys!.contains(s.key) else { continue }
+            guard let s = config.slots.first(where: { $0.device == device && $0.role == role }) else { continue }
             let size = s.format.size
             guard size.width <= bounds.width - safe.left - safe.right,
                   size.height <= bounds.height - safe.top - safe.bottom else { continue }
@@ -98,15 +97,50 @@ enum RooomAdPolicy {
                 guard bounds.width - safe.left - safe.right - 316 >= 320 else { continue }
                 let y = safe.top + 12 + (role.hasSuffix("bottom") ? 262 : 0)
                 guard y + size.height <= bounds.height - safe.bottom else { continue }
-                out.placements.append(RooomFixedPlacement(slot: s, rect: CGRect(x: safe.left + 8, y: y, width: 300, height: 250)))
+                // iPad's approved rail is layout, not evidence of an ad impression.
+                // Reserve it while loading/no-fill; actual creatives still require readiness.
                 out.reserved.left = safe.left + 316
+                if readyKeys == nil || readyKeys!.contains(s.key) {
+                    out.placements.append(RooomFixedPlacement(slot: s, rect: CGRect(x: safe.left + 8, y: y, width: 300, height: 250)))
+                }
             } else {
+                guard readyKeys == nil || readyKeys!.contains(s.key) else { continue }
                 out.placements.append(RooomFixedPlacement(slot: s, rect: CGRect(x: (bounds.width - size.width) / 2,
                     y: bounds.height - safe.bottom - size.height, width: size.width, height: size.height)))
                 out.reserved.bottom = size.height + safe.bottom
             }
         }
         return out
+    }
+}
+
+// Native knows the physical device before Web runtime detection runs. Reuse the
+// deployed ROOM owner and stylesheet; do not embed a second layout in the IPA.
+enum RooomAdBootstrap {
+    static func script(isTablet: Bool) -> String {
+        return """
+        if (window === window.top && location.origin === 'https://rooom-talk.com') {
+          (async function() {
+            if (\(isTablet ? "true" : "false") && location.pathname === '/room.html') {
+              document.documentElement.classList.add('ios-device', 'ipad-device');
+              try {
+                const room = await import('https://rooom-talk.com/src/features/room/native-ipad-modern-room.mjs');
+                const applied = await room.installNativeIpadModernRoom();
+                document.documentElement.dataset.rooomNativeLayoutStatus = applied ? 'applied' : 'capability-rejected';
+              } catch (error) {
+                document.documentElement.dataset.rooomNativeLayoutStatus = 'module-error';
+                console.warn('RoooM iPad layout module unavailable', String(error));
+              }
+            }
+            try {
+              const ads = await import('https://rooom-talk.com/src/features/ads/page-ad-runtime.mjs');
+              ads.pageAdvertising();
+            } catch (error) {
+              console.warn('RoooM advertising bootstrap unavailable', String(error));
+            }
+          })();
+        }
+        """
     }
 }
 
@@ -377,12 +411,7 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
         web.configuration.userContentController.addScriptMessageHandler(handler, contentWorld: .page, name: "rooomMonetization")
         // Same first-party Web module for TOP and direct room notification entry.
         // Missing/unpublished modules fail closed: current UI remains unchanged.
-        let bootstrap = """
-        if (window === window.top && location.origin === 'https://rooom-talk.com') {
-          import('/src/features/ads/page-ad-runtime.mjs')
-            .then(function(m){m.pageAdvertising();}).catch(function(){});
-        }
-        """
+        let bootstrap = RooomAdBootstrap.script(isTablet: UIDevice.current.userInterfaceIdiom == .pad)
         web.configuration.userContentController.addUserScript(WKUserScript(source: bootstrap, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         web.evaluateJavaScript(bootstrap, completionHandler: nil)
     }

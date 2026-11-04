@@ -51,6 +51,21 @@ check("no fill no reserved space") { assert(RooomAdPolicy.fixedLayout(config:con
 check("one ready landscape ad keeps width, never doubles rail") {
  assert(RooomAdPolicy.fixedLayout(config:config,device:"tablet",bounds:CGSize(width:1024,height:768),readyKeys:["l2"]).reserved.left==316)
 }
+check("iPad no-fill retains approved left layout without pretending creatives are ready") {
+ let l=RooomAdPolicy.fixedLayout(config:config,device:"tablet",bounds:CGSize(width:1024,height:768),readyKeys:[])
+ assert(l.reserved.left==316 && l.reserved.bottom==0 && l.placements.isEmpty)
+ let loading=RooomAdPolicy.fixedLayout(config:config,device:"tablet",bounds:CGSize(width:1024,height:768))
+ assert(loading.placements.count==2 && loading.reserved.left==l.reserved.left)
+}
+check("iPad rail still obeys OFF, keyboard, portrait, safe area and minimum room width") {
+ for c in [RooomAdConfig.off, RooomAdConfig(version:1,enabled:true,fixed:false,archive:false,slots:[left,lower])] {
+  assert(RooomAdPolicy.fixedLayout(config:c,device:"tablet",bounds:CGSize(width:1024,height:768),readyKeys:[]).reserved.left==0)
+ }
+ assert(RooomAdPolicy.fixedLayout(config:config,device:"tablet",bounds:CGSize(width:1024,height:768),keyboard:true,readyKeys:[]).reserved.left==0)
+ assert(RooomAdPolicy.fixedLayout(config:config,device:"tablet",bounds:CGSize(width:768,height:1024),readyKeys:[]).reserved==RooomAdInsets())
+ assert(RooomAdPolicy.fixedLayout(config:config,device:"tablet",bounds:CGSize(width:630,height:600),readyKeys:[]).reserved.left==0)
+ assert(RooomAdPolicy.fixedLayout(config:config,device:"tablet",bounds:CGSize(width:1024,height:768),safe:RooomAdInsets(left:20),readyKeys:[]).reserved.left==336)
+}
 check("origin allowlist and main-frame restriction") {
  assert(RooomAdPolicy.trusted(URL(string:"https://rooom-talk.com/")))
  for u in ["https://rooom-talk.com.evil.test/","http://rooom-talk.com/","https://rooom-talk.com:444/","https://user@rooom-talk.com/"] { assert(!RooomAdPolicy.trusted(URL(string:u))) }
