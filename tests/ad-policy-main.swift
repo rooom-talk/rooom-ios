@@ -47,6 +47,48 @@ check("short window suppresses lower rectangle") {
  let l=RooomAdPolicy.fixedLayout(config:config,device:"tablet",bounds:CGSize(width:1024,height:430))
  assert(l.placements.count==1 && l.placements[0].slot.key=="l")
 }
+check("Web-owned iPad rail moves to the right without a new SDK build") {
+ var c=config
+ c.presentation = RooomAdPresentation(railSide:"right",railWidth:360,railPadding:18,
+     railTop:24,railGap:30,bottomGap:0)
+ let valid=try! c.validated()
+ let l=RooomAdPolicy.fixedLayout(config:valid,device:"tablet",
+     bounds:CGSize(width:1024,height:768),readyKeys:[])
+ assert(l.reserved.left==0 && l.reserved.right==360 && l.placements.isEmpty)
+ let filled=RooomAdPolicy.fixedLayout(config:valid,device:"tablet",
+     bounds:CGSize(width:1024,height:768))
+ assert(filled.placements.count==2 && filled.reserved.right==360)
+ assert(filled.placements[0].rect.origin.x==682)
+ assert(filled.placements[0].rect.origin.y==24)
+ assert(filled.placements[1].rect.origin.y==304)
+}
+check("Web-owned bottom inset supports future approved portrait APP spot") {
+ var c=config
+ c.presentation = RooomAdPresentation(railSide:"left",railWidth:316,railPadding:8,
+     railTop:12,railGap:12,bottomGap:24)
+ let l=RooomAdPolicy.fixedLayout(config:try! c.validated(),device:"tablet",
+     bounds:CGSize(width:768,height:1024),safe:RooomAdInsets(bottom:20))
+ assert(l.placements.count==1 && l.placements[0].rect.minY==890)
+ assert(l.reserved.bottom==134)
+}
+check("native bounds reject any dangerous Web placement") {
+ for railWidth in [CGFloat.nan,-1,299,800,CGFloat.infinity] {
+  var c=config
+  c.presentation=RooomAdPresentation(railSide:"left",railWidth:railWidth,
+    railPadding:8,railTop:12,railGap:12,bottomGap:0)
+  do { _=try c.validated();assertionFailure("bad rail width accepted") } catch {}
+ }
+ var bad=config
+ bad.presentation=RooomAdPresentation(railSide:"bottom",railWidth:316,railPadding:8,
+   railTop:12,railGap:12,bottomGap:0)
+ do { _=try bad.validated();assertionFailure("bad side accepted") } catch {}
+}
+check("legacy iOS layout has no Web presentation and retains the original rail") {
+ assert(config.presentation == nil)
+ let l=RooomAdPolicy.fixedLayout(config:config,device:"tablet",bounds:CGSize(width:1024,height:768))
+ assert(l.reserved.left==316 && l.reserved.right==0)
+ assert(l.placements[0].rect.origin.x==8 && l.placements[1].rect.origin.y==274)
+}
 check("no fill no reserved space") { assert(RooomAdPolicy.fixedLayout(config:config,device:"phone",bounds:CGSize(width:390,height:844),readyKeys:[]).reserved.bottom==0) }
 check("one ready landscape ad keeps width, never doubles rail") {
  assert(RooomAdPolicy.fixedLayout(config:config,device:"tablet",bounds:CGSize(width:1024,height:768),readyKeys:["l2"]).reserved.left==316)
