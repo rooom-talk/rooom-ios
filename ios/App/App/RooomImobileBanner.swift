@@ -83,12 +83,11 @@ enum RooomAdPolicy {
         var out = RooomAdLayout()
         guard config.enabled, config.fixed, !keyboard, bounds.width.isFinite, bounds.height.isFinite,
               bounds.width > 0, bounds.height > 0 else { return out }
-        // Optional compact iPad banner uses the phone's 320x50 geometry, but
-        // the approved landscape 300x250 LEFT rail retains priority.
-        let railRoles = ["tablet.left.top", "tablet.left.bottom"]
-        let useTabletRail = device == "tablet" && bounds.width > bounds.height &&
-            config.slots.contains(where: { $0.device == "tablet" && railRoles.contains($0.role) })
-        let roles = device == "phone" ? ["phone.bottom"] : useTabletRail ? railRoles : ["tablet.bottom"]
+        // iPad portrait may use an approved 320x50 or 728x90 bottom spot.
+        // Landscape is LEFT rail only: never fall back to the portrait banner.
+        let landscapeTablet = device == "tablet" && bounds.width > bounds.height
+        let roles = device == "phone" ? ["phone.bottom"] : landscapeTablet
+            ? ["tablet.left.top", "tablet.left.bottom"] : ["tablet.bottom"]
         for role in roles {
             guard let s = config.slots.first(where: { $0.device == device && $0.role == role }),
                   readyKeys == nil || readyKeys!.contains(s.key) else { continue }
