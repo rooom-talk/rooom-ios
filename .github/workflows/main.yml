@@ -167,9 +167,16 @@ jobs:
             if(!res.ok)throw Error('STOP: Apple build lookup HTTP '+res.status);
             return res.json();
           }
-          const apps=await api('/v1/apps?filter%5BbundleId%5D=com.rooom.talk&limit=10');
-          assert.equal(apps.data?.length,1,'STOP: cannot identify unique RoooM app in Apple account');
-          const appId=apps.data[0].id;
+          // App Store ID published by Apple for RoooM Talk, not an ad provider ID.
+          // Read the exact app, then fail closed unless the response identifies our bundle.
+          // An empty filtered /v1/apps result previously stopped this workflow unnecessarily.
+          const expectedAppId='6800222762';
+          const expectedBundleId='com.rooom.talk';
+          const app=await api('/v1/apps/'+expectedAppId);
+          assert.equal(String(app.data?.id),expectedAppId,'STOP: unexpected Apple App Store app ID');
+          assert.equal(app.data?.attributes?.bundleId,expectedBundleId,
+            'STOP: Apple app does not match RoooM bundle ID');
+          const appId=expectedAppId;
           let link='/v1/apps/'+encodeURIComponent(appId)+'/builds?limit=200';
           let max=0, pages=0;
           while(link){
