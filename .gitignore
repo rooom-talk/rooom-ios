@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Vendor-supplied i-mobile SDK archive and binary remain outside public Git.
+ios/App/App/Vendor/ImobileSdkAds.xcframework/
+ios/App/App/ImobileSdkAds-Bridging-Header.h
+imobile_for_SP_app_iOS_SDK_*.zip

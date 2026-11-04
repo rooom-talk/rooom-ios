@@ -1,10 +1,18 @@
 name: Build RoooM iOS App Store review candidate
 
 on:
-  push:
-    branches:
-      - release/ios-review-candidate-20261011
   workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: "Exact 40-character merged release commit SHA"
+        required: true
+        type: string
+      confirmation:
+        description: "Explicit test-only Apple upload, no App Store release"
+        required: true
+        type: choice
+        options: [DO_NOT_UPLOAD, UPLOAD_TESTFLIGHT]
+        default: DO_NOT_UPLOAD
 
 permissions:
   contents: read
@@ -15,11 +23,35 @@ concurrency:
 
 jobs:
   build-ios:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/release/ios-review-candidate-20261011' && inputs.confirmation == 'UPLOAD_TESTFLIGHT'
     runs-on: macos-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout explicitly approved release SHA
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+          persist-credentials: false
+
+      - name: Verify exact approved source and canonical branch
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'STOP: 40-character commit SHA required'; exit 1; }
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          CURRENT="$(gh api repos/rooom-talk/rooom-ios/branches/release/ios-review-candidate-20261011 --jq .commit.sha)"
+          test "$CURRENT" = "$APPROVED_SHA" || { echo 'STOP: release branch has changed'; exit 1; }
+          test "$GITHUB_REF" = 'refs/heads/release/ios-review-candidate-20261011'
+
+      - name: Checkout pinned audited i-mobile 2.3.4 SDK on ephemeral Mac
+        uses: actions/checkout@v4
+        with:
+          repository: imobile/adnw-sdk-ios
+          ref: 736b6edc9ab6e1ada1b0dc557531370cf5923dc8
+          path: vendor-sdk
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -40,7 +72,7 @@ jobs:
           const file = "capacitor.config.json";
           const config = JSON.parse(fs.readFileSync(file, "utf8"));
           if (config.appId !== "com.rooom.talk" ||
-              config.server?.url !== "https://rooom-talk.com/?rooom_native_generation=2" ||
+              config.server?.url !== "https://rooom-talk.com/?rooom_native_generation=3" ||
               config.webDir !== "dist") {
             throw new Error("REVIEW STOP: app ID, production URL or web directory differs");
           }
@@ -58,6 +90,9 @@ jobs:
       - name: Sync Capacitor iOS
         run: npx cap sync ios
 
+      - name: Stage hash-verified official i-mobile SDK after Capacitor sync
+        run: node scripts/stage-imobile-official-sdk.mjs "$GITHUB_WORKSPACE/vendor-sdk"
+
       - name: Guard production identity and verified TEST native owners
         run: |
           set -e
@@ -73,9 +108,9 @@ jobs:
           assert.equal(config.ios?.scrollEnabled, true, 'Native WKWebView scrolling must stay enabled');
           assert.equal(config.plugins?.Keyboard?.resize, 'none', 'Verified keyboard policy must stay unchanged');
           assert.equal(config.appId, 'com.rooom.talk');
-          assert.equal(config.server?.url, 'https://rooom-talk.com/?rooom_native_generation=2');
+          assert.equal(config.server?.url, 'https://rooom-talk.com/?rooom_native_generation=3');
           assert.equal(new URL(config.server.url).origin, 'https://rooom-talk.com');
-          assert.equal(new URL(config.server.url).searchParams.get('rooom_native_generation'), '2');
+          assert.equal(new URL(config.server.url).searchParams.get('rooom_native_generation'), '3');
           assert.equal(new URL(config.server.url).pathname, '/');
           assert.equal(config.server?.cleartext, false);
           // Capacitor 8.5: WebViewDelegationHandler compares navigations to the
@@ -101,8 +136,53 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/App/App/GoogleService-Info.plist)" = 'com.rooom.talk'
           grep -q 'PRODUCT_BUNDLE_IDENTIFIER = com.rooom.talk;' ios/App/App.xcodeproj/project.pbxproj
           grep -q 'MARKETING_VERSION = 1.5;' ios/App/App.xcodeproj/project.pbxproj
-          test "$(git hash-object ios/App/App/SceneDelegate.swift)" = '9d0a2dba7357527316cab571d0d1b87672adcc97'
+          grep -q '#if ROOOM_IMOBILE_ADS' ios/App/App/SceneDelegate.swift
+          grep -q 'private var config = RooomAdConfig.off' ios/App/App/RooomImobileBanner.swift
+          grep -q 'rooom_native_generation=3' capacitor.config.json
+          grep -q 'ROOOM_IMOBILE_ADS' ios/App/App.xcodeproj/project.pbxproj
+          # All new APP placements are disabled by their production Web config.
           echo 'Verified TEST native keyboard, single Messaging owner and production signing identity'
+
+      - name: Verify new TestFlight build number against App Store Connect
+        env:
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {sign} from 'node:crypto';
+          import fs from 'node:fs';
+          const env=process.env;
+          const key=(env.APP_STORE_CONNECT_PRIVATE_KEY||'').replace(/\\n/g,'\n');
+          assert.ok(key.includes('BEGIN PRIVATE KEY'),'STOP: App Store Connect private key unavailable');
+          assert.ok(env.APP_STORE_CONNECT_KEY_ID && env.APP_STORE_CONNECT_ISSUER_ID,'STOP: App Store Connect key metadata unavailable');
+          const base64=o=>Buffer.from(JSON.stringify(o)).toString('base64url');
+          const issued=Math.floor(Date.now()/1000);
+          const input=base64({alg:'ES256',kid:env.APP_STORE_CONNECT_KEY_ID,typ:'JWT'})+'.'+base64({iss:env.APP_STORE_CONNECT_ISSUER_ID,iat:issued,exp:issued+900,aud:'appstoreconnect-v1'});
+          const signature=sign('sha256',Buffer.from(input),{key,dsaEncoding:'ieee-p1363'}).toString('base64url');
+          const token=input+'.'+signature;
+          async function api(path){
+            const res=await fetch('https://api.appstoreconnect.apple.com'+path,{headers:{Authorization:'Bearer '+token}});
+            if(!res.ok)throw Error('STOP: Apple build lookup HTTP '+res.status);
+            return res.json();
+          }
+          const apps=await api('/v1/apps?filter%5BbundleId%5D=com.rooom.talk&limit=10');
+          assert.equal(apps.data?.length,1,'STOP: cannot identify unique RoooM app in Apple account');
+          const appId=apps.data[0].id;
+          let link='/v1/apps/'+encodeURIComponent(appId)+'/builds?limit=200';
+          let max=0, pages=0;
+          while(link){
+            assert.ok(++pages<=30,'STOP: Apple build listing exceeds 30 pages; manual reconciliation needed');
+            const data=await api(link.startsWith('https:') ? new URL(link).pathname+new URL(link).search : link);
+            for(const b of data.data||[]){const v=Number(b.attributes?.version);if(Number.isSafeInteger(v))max=Math.max(max,v);}
+            link=data.links?.next||null;
+          }
+          const proposed=100000+Number(env.GITHUB_RUN_NUMBER);
+          assert.ok(Number.isSafeInteger(proposed)&&proposed>max,'STOP: computed build number '+proposed+' is not greater than Apple latest '+max);
+          fs.appendFileSync(env.GITHUB_ENV,'ROOOM_TESTFLIGHT_BUILD_NUMBER='+proposed+'\n');
+          console.log('Apple build version preflight PASS: previous maximum '+max+', candidate '+proposed);
+          NODE
 
       - name: Install Apple certificate and provisioning profile
         env:
@@ -146,7 +226,7 @@ jobs:
       - name: Create archive
         run: |
           cd ios/App
-          BUILD_NUMBER=$((1000 + GITHUB_RUN_NUMBER))
+          BUILD_NUMBER="${ROOOM_TESTFLIGHT_BUILD_NUMBER:?Apple build preflight missing}"
           echo "Review candidate build number: $BUILD_NUMBER"
 
           xcodebuild \
@@ -158,10 +238,14 @@ jobs:
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
             APP_PROFILE="$PROFILE_UUID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            MARKETING_VERSION=1.6 \
             clean archive
 
-          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx '1.5'
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx '1.6'
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx 'com.rooom.talk'
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx "$BUILD_NUMBER"
+          codesign --verify --deep --strict "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app"
+          test -f "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/embedded.mobileprovision"
 
       - name: Create ExportOptions.plist
         run: |
@@ -195,12 +279,8 @@ jobs:
             -exportPath "$RUNNER_TEMP/export" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
 
-      - name: Save IPA as GitHub artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: RoooM-iOS
-          path: ${{ runner.temp }}/export/*.ipa
-          if-no-files-found: error
+      # Public repository: do not upload the signed IPA to GitHub artifacts.
+      # IPA exists only on the ephemeral Mac runner until Apple upload completes.
 
       - name: Prepare App Store Connect API key
         env:
@@ -211,7 +291,7 @@ jobs:
           printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
 
       # Build upload only. Review submission and public release are separate manual actions.
-      - name: Upload review candidate to App Store Connect
+      - name: Upload TestFlight processing candidate to App Store Connect (NOT app review)
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -229,3 +309,8 @@ jobs:
             --file "$IPA_PATH" \
             --apiKey "$APP_STORE_CONNECT_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+
+      - name: Explicit release boundary
+        run: |
+          echo 'TestFlight candidate upload attempted; Apple processing and tester access are separate.'
+          echo 'NO App Store review submission, NO public release, NO Web/Firebase deploy.'
