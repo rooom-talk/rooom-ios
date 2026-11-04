@@ -115,6 +115,6 @@ test('unfilled native ad rail inherits RoooM body theme without changing ad rese
  // Background updates are presentation-only; do not touch reserved layout.
  const backgroundCase=ad.split('case "background":')[1].split('case "configure":')[0];
  assert.doesNotMatch(backgroundCase,/setReservation|fixedLayout|adReservationChanged|ImobileSdkAds|clear\(/);
- assert.match(ad,/const roles = device == "phone" \? \["phone.bottom"\]/);
+ assert.match(ad,/let roles = device == "phone" \? \["phone.bottom"\]/);
  assert.match(ad,/\? \["tablet.left.top", "tablet.left.bottom"\] : \["tablet.bottom"\]/);
 });
