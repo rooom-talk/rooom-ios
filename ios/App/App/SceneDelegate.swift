@@ -42,6 +42,8 @@ final class RooomKeyboardContainerViewController: UIViewController {
             bridgeBottomConstraint
         ])
         bridgeViewController.adReservationChanged = { [weak self] _ in self?.updateBridgeBottom() }
+        bridgeViewController.monetization?.layout()
+        updateBridgeBottom()
 #else
         NSLayoutConstraint.activate([
             bridgeView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -87,6 +89,13 @@ final class RooomKeyboardContainerViewController: UIViewController {
         return endFrame.intersects(view.bounds) ? overlap : 0
     }
 #if ROOOM_IMOBILE_ADS
+    override func viewWillLayoutSubviews() {
+        // Resolve the existing ad constraints before UIKit lays out the first
+        // visible WebView frame, including rotation and cached-policy startup.
+        bridgeViewController.monetization?.layout()
+        updateBridgeBottom()
+        super.viewWillLayoutSubviews()
+    }
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
         bridgeViewController.monetization?.layout()
@@ -100,6 +109,9 @@ final class RooomKeyboardContainerViewController: UIViewController {
         guard bridgeBottomConstraint != nil, bridgeLeadingConstraint != nil,
               bridgeTrailingConstraint != nil else { return }
         let reserved = bridgeViewController.monetization?.reservation ?? RooomAdInsets()
+        guard bridgeBottomConstraint.constant != -(lastKeyboardOverlap + reserved.bottom) ||
+              bridgeLeadingConstraint.constant != reserved.left ||
+              bridgeTrailingConstraint.constant != -reserved.right else { return }
         bridgeBottomConstraint.constant = -(lastKeyboardOverlap + reserved.bottom)
         bridgeLeadingConstraint.constant = reserved.left
         bridgeTrailingConstraint.constant = -reserved.right

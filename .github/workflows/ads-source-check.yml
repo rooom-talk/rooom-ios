@@ -4,11 +4,18 @@ on:
     paths:
       - 'ios/App/App/RooomImobileBanner.swift'
       - 'ios/App/App/SceneDelegate.swift'
+      - 'public/rooom-initial-ad-layout.json'
+      - 'scripts/sync-initial-ad-layout.mjs'
       - 'scripts/*imobile*'
       - 'scripts/check-ad-source.sh'
       - 'tests/*'
       - '.github/workflows/ads-source-check.yml'
   workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact merged commit to verify
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
@@ -17,6 +24,15 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha || github.sha }}
+      - name: Verify manually selected source
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
       - uses: actions/setup-node@v4
         with:
           node-version: 22

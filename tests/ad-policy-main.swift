@@ -134,4 +134,29 @@ check("same protocol accepts multiple native feed slots") {
  let c=RooomAdConfig(version:1,enabled:true,fixed:false,archive:true,slots:[s]); _ = try c.validated()
  assert(RooomAdPolicy.fixedLayout(config:c,device:"phone",bounds:CGSize(width:390,height:844)).placements.isEmpty)
 }
+check("initial geometry uses last validated Web policy, including OFF") {
+ let seed=try! JSONEncoder().encode(config)
+ let off=try! JSONEncoder().encode(RooomAdConfig.off)
+ assert(RooomInitialAdLayout.restore(cached:nil,bundled:seed)==config)
+ assert(RooomInitialAdLayout.restore(cached:off,bundled:seed)==RooomAdConfig.off)
+ assert(RooomInitialAdLayout.restore(cached:Data("bad".utf8),bundled:seed)==config)
+ assert(RooomInitialAdLayout.restore(cached:nil,bundled:nil)==RooomAdConfig.off)
+ assert(RooomInitialAdLayout.decode(Data(repeating:32,count:16385))==nil)
+ var changed=config
+ changed.presentation=RooomAdPresentation(railSide:"right",railWidth:340,railPadding:16,railTop:20,railGap:14,bottomGap:10)
+ assert(RooomInitialAdLayout.restore(cached:try! JSONEncoder().encode(changed),bundled:seed)==changed)
+}
+check("iPad initial portrait reservation is stable through fill and rotation; phone unchanged") {
+ let compact=slot("compact","tablet.bottom","tablet",.banner,"999805")
+ let c=RooomAdConfig(version:1,enabled:true,fixed:true,archive:false,slots:[compact,left,lower,phone])
+ let blank=RooomAdPolicy.fixedLayout(config:c,device:"tablet",bounds:CGSize(width:768,height:1024),safe:RooomAdInsets(bottom:20),readyKeys:[],reserveTabletBottom:true)
+ let ready=RooomAdPolicy.fixedLayout(config:c,device:"tablet",bounds:CGSize(width:768,height:1024),safe:RooomAdInsets(bottom:20),readyKeys:["compact"],reserveTabletBottom:true)
+ assert(blank.reserved.bottom==70 && blank.placements.isEmpty && blank.reserved==ready.reserved)
+ let landscape=RooomAdPolicy.fixedLayout(config:c,device:"tablet",bounds:CGSize(width:1024,height:768),readyKeys:[],reserveTabletBottom:true)
+ assert(landscape.reserved.left==316 && landscape.reserved.bottom==0)
+ let keyboard=RooomAdPolicy.fixedLayout(config:c,device:"tablet",bounds:CGSize(width:1024,height:768),keyboard:true,readyKeys:[],reserveTabletBottom:true)
+ assert(keyboard.reserved==RooomAdInsets())
+ let iphone=RooomAdPolicy.fixedLayout(config:c,device:"phone",bounds:CGSize(width:390,height:844),readyKeys:[],reserveTabletBottom:true)
+ assert(iphone.reserved==RooomAdInsets())
+}
 print("ALL \(count) POLICY TESTS PASSED; UIKit/SDK runtime NOT tested")

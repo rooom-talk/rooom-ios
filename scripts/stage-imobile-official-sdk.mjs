@@ -47,6 +47,9 @@ const sceneSrc=path.join(root,'ios/App/App/SceneDelegate.swift');
 function main(){
   assert.equal(process.platform,'darwin','Official iOS native build requires the GitHub macOS runner');
   assert.equal(process.argv.length,3,'Usage: node scripts/stage-imobile-official-sdk.mjs /path/to/official-v2.3.4-repo');
+  assert.ok(fs.readFileSync(path.join(root,'public/rooom-initial-ad-layout.json'))
+    .equals(fs.readFileSync(path.join(root,'ios/App/App/public/rooom-initial-ad-layout.json'))),
+    'Initial Web-owned layout seed was not copied by the normal build/cap sync');
   assert.ok(fs.existsSync(vendorFramework),'Official i-mobile xcframework source is missing');
   const commit=execFileSync('git',['-C',vendorDir,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
   assert.equal(commit,officialCommit,'Official SDK Git commit changed; fail closed');
