@@ -76,7 +76,7 @@ jobs:
           const c=JSON.parse(fs.readFileSync(path,'utf8'));
           assert.equal(c.appId,'com.rooom.talk');
           assert.equal(c.webDir,'dist');
-          assert.equal(c.server?.url,'https://rooom-talk.com/?rooom_native_generation=2');
+          assert.equal(c.server?.url,'https://rooom-talk.com/?rooom_native_generation=3');
           assert.equal(c.server?.cleartext,false);
           assert.deepEqual(c.server?.allowNavigation,['rooom-talk.com']);
           c.ios={...(c.ios||{}),scrollEnabled:true};
