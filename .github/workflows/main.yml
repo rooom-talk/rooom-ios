@@ -170,7 +170,7 @@ jobs:
           const apps=await api('/v1/apps?filter%5BbundleId%5D=com.rooom.talk&limit=10');
           assert.equal(apps.data?.length,1,'STOP: cannot identify unique RoooM app in Apple account');
           const appId=apps.data[0].id;
-          let link='/v1/builds?filter%5Bapp%5D='+encodeURIComponent(appId)+'&limit=200&sort=-uploadedDate';
+          let link='/v1/apps/'+encodeURIComponent(appId)+'/builds?limit=200';
           let max=0, pages=0;
           while(link){
             assert.ok(++pages<=30,'STOP: Apple build listing exceeds 30 pages; manual reconciliation needed');
