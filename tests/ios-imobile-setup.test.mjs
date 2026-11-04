@@ -99,3 +99,22 @@ test('iOS 1.6 TestFlight upload uses the existing Mac workflow, manual only and 
  assert.doesNotMatch(ci,/actions\/upload-artifact@/);
  assert.doesNotMatch(ci,/firebase deploy|fastlane deliver|submit-for-review/);
 });
+
+test('unfilled native ad rail inherits RoooM body theme without changing ad reservation',()=>{
+ const ad=fs.readFileSync('ios/App/App/RooomImobileBanner.swift','utf8');
+ assert.match(ad,/getComputedStyle\(root\)/);
+ assert.match(ad,/getPropertyValue\('--bg'\)/);
+ assert.match(ad,/op:'background', rgb:channels/);
+ assert.match(ad,/MutationObserver\(syncRailBackground\)/);
+ assert.match(ad,/attributeFilter:\['class','data-theme'\]/);
+ assert.match(ad,/case "background":/);
+ assert.match(ad,/message\.frameInfo\.isMainFrame/);
+ assert.match(ad,/origin\.host == "rooom-talk.com"/);
+ assert.match(ad,/values\.allSatisfy/);
+ assert.match(ad,/owner\.parent\?\.view\.backgroundColor = color/);
+ // Background updates are presentation-only; do not touch reserved layout.
+ const backgroundCase=ad.split('case "background":')[1].split('case "configure":')[0];
+ assert.doesNotMatch(backgroundCase,/setReservation|fixedLayout|adReservationChanged|ImobileSdkAds|clear\(/);
+ assert.match(ad,/const roles = device == "phone" \? \["phone.bottom"\]/);
+ assert.match(ad,/\? \["tablet.left.top", "tablet.left.bottom"\] : \["tablet.bottom"\]/);
+});
