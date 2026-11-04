@@ -17,6 +17,15 @@ final class RooomKeyboardContainerViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+#if ROOOM_IMOBILE_ADS
+        // RoooM TOP's initial light-theme canvas, before the Web theme arrives.
+        // The verified first-party page then synchronizes its actual --bg.
+        // This is the native region OUTSIDE WKWebView, not a fake ad rectangle.
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            view.backgroundColor = UIColor(red: 239.0 / 255, green: 239.0 / 255,
+                                           blue: 239.0 / 255, alpha: 1)
+        }
+#endif
         addChild(bridgeViewController)
         let bridgeView = bridgeViewController.view!
         bridgeView.translatesAutoresizingMaskIntoConstraints = false
