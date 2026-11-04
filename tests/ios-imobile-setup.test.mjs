@@ -72,3 +72,24 @@ test('signing uses explicit manual dispatch, reviewed PR SHA, and never uploads 
  assert.match(ci,/NO App Store Connect\/TestFlight submission/);
  assert.doesNotMatch(ci,/xcrun altool|upload-artifact@|firebase deploy|fastlane pilot|notarytool/);
 });
+
+test('iOS 1.6 TestFlight upload uses the existing Mac workflow, manual only and immutable release commit',()=>{
+ const ci=fs.readFileSync('.github/workflows/main.yml','utf8');
+ const capacitor=JSON.parse(fs.readFileSync('capacitor.config.json','utf8'));
+ assert.equal(capacitor.server.url,'https://rooom-talk.com/?rooom_native_generation=3');
+ assert.match(ci,/on:\n  workflow_dispatch:/);
+ assert.doesNotMatch(ci,/\n  push:/);
+ assert.match(ci,/inputs\.confirmation == 'UPLOAD_TESTFLIGHT'/);
+ assert.match(ci,/github\.ref == 'refs\/heads\/release\/ios-review-candidate-20261011'/);
+ assert.match(ci,/test "\$\(git rev-parse HEAD\)" = "\$APPROVED_SHA"/);
+ assert.match(ci,/test "\$CURRENT" = "\$APPROVED_SHA"/);
+ assert.match(ci,/node scripts\/stage-imobile-official-sdk\.mjs/);
+ assert.match(ci,/ROOOM_TESTFLIGHT_BUILD_NUMBER/);
+ assert.match(ci,/Apple build lookup HTTP/);
+ assert.match(ci,/MARKETING_VERSION=1\.6/);
+ assert.match(ci,/rooom_native_generation=3/);
+ assert.match(ci,/private var config = RooomAdConfig\.off/);
+ assert.match(ci,/xcrun altool/);
+ assert.doesNotMatch(ci,/actions\/upload-artifact@/);
+ assert.doesNotMatch(ci,/firebase deploy|fastlane deliver|submit-for-review/);
+});
