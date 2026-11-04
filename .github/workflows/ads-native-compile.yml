@@ -5,6 +5,8 @@ on:
     paths:
       - 'ios/App/App/RooomImobileBanner.swift'
       - 'ios/App/App/SceneDelegate.swift'
+      - 'ios/App/App/PrivacyInfo.xcprivacy'
+      - 'public/rooom-initial-ad-layout.json'
       - 'scripts/stage-imobile-official-sdk.mjs'
       - 'scripts/prepare-ios-imobile-sdk.mjs'
       - '.github/workflows/ads-native-compile.yml'
@@ -13,6 +15,11 @@ on:
       - 'tests/**'
       - 'scripts/request-testflight.ps1'
   workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact merged commit to build without signing
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -22,10 +29,18 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 35
     steps:
-      - name: Checkout RoooM draft PR (never the release branch)
+      - name: Checkout PR or explicitly selected merged candidate
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          ref: ${{ inputs.approved_sha || github.sha }}
+      - name: Verify manually selected source
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
 
       - name: Checkout pinned official i-mobile 2.3.4 SDK (no vendor binary committed)
         uses: actions/checkout@v4

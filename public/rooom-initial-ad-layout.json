@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "enabled": true,
+  "fixed": true,
+  "archive": false,
+  "slots": [
+    {
+      "key": "ios.tablet.left.upper",
+      "role": "tablet.left.top",
+      "device": "tablet",
+      "format": "rectangle",
+      "publisherId": "85650",
+      "mediaId": "597836",
+      "spotId": "1951342"
+    },
+    {
+      "key": "ios.tablet.left.lower",
+      "role": "tablet.left.bottom",
+      "device": "tablet",
+      "format": "rectangle",
+      "publisherId": "85650",
+      "mediaId": "597836",
+      "spotId": "1951343"
+    },
+    {
+      "key": "ios.tablet.bottom.320",
+      "role": "tablet.bottom",
+      "device": "tablet",
+      "format": "banner",
+      "publisherId": "85650",
+      "mediaId": "597836",
+      "spotId": "1951334"
+    }
+  ],
+  "rules": [],
+  "presentation": {
+    "railSide": "left",
+    "railWidth": 316,
+    "railPadding": 8,
+    "railTop": 12,
+    "railGap": 12,
+    "bottomGap": 0
+  }
+}

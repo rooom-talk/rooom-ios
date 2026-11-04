@@ -103,7 +103,8 @@ enum RooomAdPolicy {
     // Physical OUTER view, not the WebView already narrowed by our own rail.
     static func fixedLayout(config: RooomAdConfig, device: String, bounds: CGSize,
                             safe: RooomAdInsets = RooomAdInsets(), keyboard: Bool = false,
-                            readyKeys: Set<String>? = nil) -> RooomAdLayout {
+                            readyKeys: Set<String>? = nil,
+                            reserveTabletBottom: Bool = false) -> RooomAdLayout {
         var out = RooomAdLayout()
         guard config.enabled, config.fixed, !keyboard, bounds.width.isFinite, bounds.height.isFinite,
               bounds.width > 0, bounds.height > 0 else { return out }
@@ -134,15 +135,32 @@ enum RooomAdPolicy {
                         y: y, width: size.width, height: size.height)))
                 }
             } else {
-                guard readyKeys == nil || readyKeys!.contains(s.key) else { continue }
+                let ready = readyKeys == nil || readyKeys!.contains(s.key)
+                guard ready || (device == "tablet" && reserveTabletBottom) else { continue }
                 guard size.height + look.bottomGap + safe.bottom <= bounds.height else { continue }
-                out.placements.append(RooomFixedPlacement(slot: s, rect: CGRect(x: (bounds.width - size.width) / 2,
-                    y: bounds.height - safe.bottom - size.height - look.bottomGap,
-                    width: size.width, height: size.height)))
+                if ready {
+                    out.placements.append(RooomFixedPlacement(slot: s, rect: CGRect(x: (bounds.width - size.width) / 2,
+                        y: bounds.height - safe.bottom - size.height - look.bottomGap,
+                        width: size.width, height: size.height)))
+                }
                 out.reserved.bottom = size.height + safe.bottom + look.bottomGap
             }
         }
         return out
+    }
+}
+
+// A last verified Web configuration is used for geometry only, never to start
+// the SDK. Fresh installs use a generated snapshot of that same Web owner.
+enum RooomInitialAdLayout {
+    static let cacheKey = "rooom.verified-ad-layout.v1"
+    static func decode(_ data: Data?) -> RooomAdConfig? {
+        guard let data, data.count <= 16384,
+              let config = try? JSONDecoder().decode(RooomAdConfig.self, from: data) else { return nil }
+        return try? config.validated()
+    }
+    static func restore(cached: Data?, bundled: Data?) -> RooomAdConfig {
+        return decode(cached) ?? decode(bundled) ?? .off
     }
 }
 
@@ -343,10 +361,12 @@ private final class RooomSdkSlot: NSObject, IMobileSdkAdsDelegate {
 final class RooomMonetization {
     weak var controller: RooomAdsBridgeViewController?
     private var config = RooomAdConfig.off
+    private var initialLayout: RooomAdConfig
     private var entries: [String: RooomSdkSlot] = [:]
     private var keyboard = false, layingOut = false
     private var observers: [NSObjectProtocol] = []
     private var navigation: NSKeyValueObservation?
+    private var pageLocation: NSKeyValueObservation?
     private var lastHaptic = 0.0
     private let selection = UISelectionFeedbackGenerator()
     private(set) var reservation = RooomAdInsets()
@@ -354,22 +374,39 @@ final class RooomMonetization {
     var web: WKWebView? { controller?.bridge?.webView }
     var shell: UIView? { controller?.parent?.view }
     init(controller: RooomAdsBridgeViewController) {
+        let seedURL = Bundle.main.url(forResource: "rooom-initial-ad-layout", withExtension: "json", subdirectory: "public")
+        let seed = seedURL.flatMap { try? Data(contentsOf: $0) }
+        initialLayout = RooomInitialAdLayout.restore(
+            cached: UserDefaults.standard.data(forKey: RooomInitialAdLayout.cacheKey), bundled: seed)
         self.controller = controller
-        // Clear on document navigation, not hash changes within the same page.
+        // Drop creatives/permission on navigation, retain only verified geometry.
         navigation = web?.observe(\.isLoading, options: [.new]) { [weak self] web, _ in
-            if web.isLoading { self?.clear() }
+            if web.isLoading { self?.beginDocument() }
         }
+        pageLocation = web?.observe(\.url, options: [.new]) { [weak self] _, _ in self?.layout() }
         observers.append(NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.hideAll() })
         observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.layout() })
     }
     deinit { for observer in observers { NotificationCenter.default.removeObserver(observer) }; clear() }
     func configure(_ next: RooomAdConfig) throws {
         let valid = try next.validated()
+        // Web stays authoritative, including OFF. Persist only after validation
+        // through the existing trusted main-frame bridge; no eager SDK loading.
+        initialLayout = valid
+        if let data = try? JSONEncoder().encode(valid) {
+            UserDefaults.standard.set(data, forKey: RooomInitialAdLayout.cacheKey)
+        }
         guard valid != config else { layout(); return }
-        clear(); config = valid; layout()
+        releaseCreatives(); config = valid; layout()
+    }
+    private func releaseCreatives() {
+        let old = entries; entries.removeAll(); for entry in old.values { entry.release() }
+    }
+    private func beginDocument() {
+        releaseCreatives(); config = .off; layout()
     }
     func clear() {
-        let old = entries; entries.removeAll(); for entry in old.values { entry.release() }
+        releaseCreatives()
         config = .off; setReservation(RooomAdInsets())
     }
     private func setReservation(_ next: RooomAdInsets) {
@@ -377,7 +414,10 @@ final class RooomMonetization {
     }
     func setKeyboardVisible(_ value: Bool) { keyboard = value; if value { hideFeed() }; layout() }
     func hideFeed() { for e in entries.values where e.slot.format == .native { e.view.isHidden = true } }
-    private func hideAll() { for e in entries.values { e.view.isHidden = true }; setReservation(RooomAdInsets()) }
+    private func hideAll() {
+        for e in entries.values { e.view.isHidden = true }
+        if device != "tablet" { setReservation(RooomAdInsets()) }
+    }
     private func entry(_ slot: RooomAdSlot) throws -> RooomSdkSlot {
         if let e = entries[slot.key] { return e }
         guard entries.count < RooomAdPolicy.maxSlots else { throw RooomAdError.limit }
@@ -386,8 +426,20 @@ final class RooomMonetization {
     func layout() {
         guard !layingOut, let shell, let web else { return }
         layingOut = true; defer { layingOut = false }
-        guard RooomAdPolicy.advertisingPage(web.url), UIApplication.shared.applicationState == .active else { hideAll(); return }
+        // The configured launch URL is available before WKWebView has its first
+        // URL. After navigation starts, always use the real page URL.
+        let pageURL = web.url ?? controller?.bridge?.config.serverURL
+        guard RooomAdPolicy.advertisingPage(pageURL) else {
+            hideAll(); setReservation(RooomAdInsets()); return
+        }
         let s = shell.safeAreaInsets, safe = RooomAdInsets(top: s.top, left: s.left, bottom: s.bottom, right: s.right)
+        let ready = Set(entries.values.filter { $0.ready && !$0.failed }.map { $0.slot.key })
+        // Only iPad uses the pre-document layout. iPhone retains its ready-only
+        // reservation and existing configuration lifecycle.
+        let geometry = device == "tablet" ? initialLayout : config
+        setReservation(RooomAdPolicy.fixedLayout(config: geometry, device: device, bounds: shell.bounds.size,
+            safe: safe, keyboard: keyboard, readyKeys: ready, reserveTabletBottom: device == "tablet").reserved)
+        guard UIApplication.shared.applicationState == .active else { hideAll(); return }
         let desired = RooomAdPolicy.fixedLayout(config: config, device: device, bounds: shell.bounds.size, safe: safe, keyboard: keyboard)
         let desiredKeys = Set(desired.placements.map { $0.slot.key })
         for e in entries.values where e.slot.format != .native && !desiredKeys.contains(e.slot.key) { e.view.isHidden = true }
@@ -396,8 +448,6 @@ final class RooomMonetization {
             if e.view.superview !== shell { shell.addSubview(e.view) }
             e.view.frame = p.rect; e.view.isHidden = !e.ready || e.failed
         }
-        let ready = Set(entries.values.filter { $0.ready && !$0.failed }.map { $0.slot.key })
-        setReservation(RooomAdPolicy.fixedLayout(config: config, device: device, bounds: shell.bounds.size, safe: safe, keyboard: keyboard, readyKeys: ready).reserved)
         for p in desired.placements { entries[p.slot.key]?.showBannerIfNeeded() }
     }
     fileprivate func slotChanged(_ entry: RooomSdkSlot, status: String) {
@@ -491,6 +541,7 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
         do {
             switch op {
             case "capabilities": reply(["version":1,"implemented":true,"platform":"ios","device":engine.device,
+                "fixedLayoutReservation":"before-fill-v1",
                 "formats":["banner","largeBanner","rectangle","tabletBanner","native"],"maxSlots":RooomAdPolicy.maxSlots],nil)
             case "background":
                 // Appearance only: restricted to the existing trusted first-party
