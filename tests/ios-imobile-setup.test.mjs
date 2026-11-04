@@ -86,6 +86,7 @@ test('iOS 1.6 TestFlight upload uses the existing Mac workflow, manual only and 
  assert.match(ci,/node scripts\/stage-imobile-official-sdk\.mjs/);
  assert.match(ci,/ROOOM_TESTFLIGHT_BUILD_NUMBER/);
  assert.match(ci,/Apple build lookup HTTP/);
+ assert.match(ci,/\/v1\/apps\/.*\/builds\?limit=200/);
  assert.match(ci,/MARKETING_VERSION=1\.6/);
  assert.match(ci,/rooom_native_generation=3/);
  assert.match(ci,/private var config = RooomAdConfig\.off/);
