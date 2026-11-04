@@ -10,6 +10,8 @@ on:
       - '.github/workflows/ads-native-compile.yml'
       - 'capacitor.config.json'
       - 'ios/App/App.xcodeproj/**'
+      - 'tests/**'
+      - 'scripts/request-testflight.ps1'
   workflow_dispatch:
 
 permissions:

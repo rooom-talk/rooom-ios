@@ -29,3 +29,6 @@ jobs:
           swiftc ios/App/App/RooomImobileBanner.swift "$RUNNER_TEMP/main.swift" -o "$RUNNER_TEMP/wk-bootstrap"
           "$RUNNER_TEMP/wk-bootstrap" --baseline
           "$RUNNER_TEMP/wk-bootstrap"
+          "$RUNNER_TEMP/wk-bootstrap" --phone
+          "$RUNNER_TEMP/wk-bootstrap" --home
+          "$RUNNER_TEMP/wk-bootstrap" --external
