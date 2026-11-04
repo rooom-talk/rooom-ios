@@ -28,6 +28,21 @@ check("iPad landscape reserves one left rail for two ads") {
  let l=RooomAdPolicy.fixedLayout(config:config,device:"tablet",bounds:CGSize(width:1024,height:768))
  assert(l.placements.count==2 && l.reserved.left==316 && l.reserved.bottom==0)
 }
+check("compact 320x50 iPad portrait uses bottom only") {
+ let compact = slot("compact","tablet.bottom","tablet",.banner,"999805")
+ let c = RooomAdConfig(version:1,enabled:true,fixed:true,archive:false,slots:[compact,left,lower])
+ let portrait = RooomAdPolicy.fixedLayout(config:c,device:"tablet",bounds:CGSize(width:768,height:1024))
+ assert(portrait.placements.count==1 && portrait.placements[0].slot.key=="compact")
+ assert(portrait.placements[0].rect.width==320 && portrait.reserved.bottom==50 && portrait.reserved.left==0)
+ let landscape = RooomAdPolicy.fixedLayout(config:c,device:"tablet",bounds:CGSize(width:1024,height:768))
+ assert(landscape.placements.count==2 && landscape.reserved.left==316 && landscape.reserved.bottom==0)
+}
+check("iPad landscape never falls back to bottom banner without left spots") {
+ let compact = slot("compact","tablet.bottom","tablet",.banner,"999805")
+ let c = RooomAdConfig(version:1,enabled:true,fixed:true,archive:false,slots:[compact])
+ assert(RooomAdPolicy.fixedLayout(config:c,device:"tablet",bounds:CGSize(width:1024,height:768)).placements.isEmpty)
+ assert(RooomAdPolicy.fixedLayout(config:c,device:"tablet",bounds:CGSize(width:768,height:1024)).placements.count==1)
+}
 check("short window suppresses lower rectangle") {
  let l=RooomAdPolicy.fixedLayout(config:config,device:"tablet",bounds:CGSize(width:1024,height:430))
  assert(l.placements.count==1 && l.placements[0].slot.key=="l")
