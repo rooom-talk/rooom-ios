@@ -135,7 +135,7 @@ enum RooomAdBootstrap {
             // Native rail is outside WKWebView. Match its background to the
             // actual first-party RoooM CSS theme, even when no ad is filled.
             // This changes only appearance; never changes a placement/reservation.
-            if (!window.__rooomNativeRailBackgroundSync) {
+            if (\(isTablet ? "true" : "false") && !window.__rooomNativeRailBackgroundSync) {
               window.__rooomNativeRailBackgroundSync = true;
               const syncRailBackground = function() {
                 try {
