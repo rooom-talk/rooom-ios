@@ -21,14 +21,38 @@ struct RooomAdSlot: Codable, Equatable {
     let format: RooomAdFormat
     let publisherId: String, mediaId: String, spotId: String
 }
+// Layout is presentation data owned by first-party Web. The signed SDK binary
+// owns registration, consent boundaries, view lifecycle and input/keyboard.
+// Every field has a conservative range; missing policy reproduces iOS 1.6.
+struct RooomAdPresentation: Codable, Equatable {
+    let railSide: String
+    let railWidth: CGFloat
+    let railPadding: CGFloat
+    let railTop: CGFloat
+    let railGap: CGFloat
+    let bottomGap: CGFloat
+    static let standard = RooomAdPresentation(railSide: "left", railWidth: 316,
+        railPadding: 8, railTop: 12, railGap: 12, bottomGap: 0)
+    func validated() throws -> RooomAdPresentation {
+        guard ["left", "right"].contains(railSide),
+              [railWidth, railPadding, railTop, railGap, bottomGap].allSatisfy({ $0.isFinite }),
+              (308...460).contains(railWidth),
+              railPadding >= 0 && railPadding <= railWidth - 300,
+              (0...100).contains(railTop), (0...100).contains(railGap),
+              (0...100).contains(bottomGap) else { throw RooomAdError.invalidConfig }
+        return self
+    }
+}
 struct RooomAdConfig: Codable, Equatable {
     let version: Int, enabled: Bool, fixed: Bool, archive: Bool
     let slots: [RooomAdSlot]
+    var presentation: RooomAdPresentation? = nil
     static let off = RooomAdConfig(version: 1, enabled: false, fixed: false, archive: false, slots: [])
     func validated() throws -> RooomAdConfig {
         guard version == 1 else { throw RooomAdError.invalidConfig }
         if !enabled { return .off }
         guard slots.count <= 20 else { throw RooomAdError.limit }
+        _ = try presentation?.validated()
         var keys = Set<String>(), spots = Set<String>()
         for s in slots {
             guard RooomAdPolicy.validKey(s.key), keys.insert(s.key).inserted,
@@ -85,6 +109,7 @@ enum RooomAdPolicy {
               bounds.width > 0, bounds.height > 0 else { return out }
         // iPad portrait may use an approved 320x50 or 728x90 bottom spot.
         // Landscape is LEFT rail only: never fall back to the portrait banner.
+        let look = config.presentation ?? .standard
         let landscapeTablet = device == "tablet" && bounds.width > bounds.height
         let roles = device == "phone" ? ["phone.bottom"] : landscapeTablet
             ? ["tablet.left.top", "tablet.left.bottom"] : ["tablet.bottom"]
@@ -94,20 +119,27 @@ enum RooomAdPolicy {
             guard size.width <= bounds.width - safe.left - safe.right,
                   size.height <= bounds.height - safe.top - safe.bottom else { continue }
             if role.hasPrefix("tablet.left") {
-                guard bounds.width - safe.left - safe.right - 316 >= 320 else { continue }
-                let y = safe.top + 12 + (role.hasSuffix("bottom") ? 262 : 0)
+                // Publisher creative remains 300x250. Web controls only the
+                // rail's location and padding, never the SDK's intrinsic size.
+                guard bounds.width - safe.left - safe.right - look.railWidth >= 320 else { continue }
+                let y = safe.top + look.railTop + (role.hasSuffix("bottom") ? size.height + look.railGap : 0)
                 guard y + size.height <= bounds.height - safe.bottom else { continue }
-                // iPad's approved rail is layout, not evidence of an ad impression.
-                // Reserve it while loading/no-fill; actual creatives still require readiness.
-                out.reserved.left = safe.left + 316
+                // Reserving the rail does not claim an ad impression/no-fill.
+                // Both the 1.6 default and new Web policy reserve while loading.
+                let railStart = look.railSide == "left" ? safe.left : bounds.width - safe.right - look.railWidth
+                if look.railSide == "left" { out.reserved.left = safe.left + look.railWidth }
+                else { out.reserved.right = safe.right + look.railWidth }
                 if readyKeys == nil || readyKeys!.contains(s.key) {
-                    out.placements.append(RooomFixedPlacement(slot: s, rect: CGRect(x: safe.left + 8, y: y, width: 300, height: 250)))
+                    out.placements.append(RooomFixedPlacement(slot: s, rect: CGRect(x: railStart + look.railPadding,
+                        y: y, width: size.width, height: size.height)))
                 }
             } else {
                 guard readyKeys == nil || readyKeys!.contains(s.key) else { continue }
+                guard size.height + look.bottomGap + safe.bottom <= bounds.height else { continue }
                 out.placements.append(RooomFixedPlacement(slot: s, rect: CGRect(x: (bounds.width - size.width) / 2,
-                    y: bounds.height - safe.bottom - size.height, width: size.width, height: size.height)))
-                out.reserved.bottom = size.height + safe.bottom
+                    y: bounds.height - safe.bottom - size.height - look.bottomGap,
+                    width: size.width, height: size.height)))
+                out.reserved.bottom = size.height + safe.bottom + look.bottomGap
             }
         }
         return out
