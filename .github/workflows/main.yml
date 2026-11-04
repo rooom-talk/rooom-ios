@@ -154,7 +154,7 @@ jobs:
           import {sign} from 'node:crypto';
           import fs from 'node:fs';
           const env=process.env;
-          const key=(env.APP_STORE_CONNECT_PRIVATE_KEY||'').replace(/\\n/g,'\\n');
+          const key=(env.APP_STORE_CONNECT_PRIVATE_KEY||'').replace(/\\n/g,'\n');
           assert.ok(key.includes('BEGIN PRIVATE KEY'),'STOP: App Store Connect private key unavailable');
           assert.ok(env.APP_STORE_CONNECT_KEY_ID && env.APP_STORE_CONNECT_ISSUER_ID,'STOP: App Store Connect key metadata unavailable');
           const base64=o=>Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -180,7 +180,7 @@ jobs:
           }
           const proposed=100000+Number(env.GITHUB_RUN_NUMBER);
           assert.ok(Number.isSafeInteger(proposed)&&proposed>max,'STOP: computed build number '+proposed+' is not greater than Apple latest '+max);
-          fs.appendFileSync(env.GITHUB_ENV,'ROOOM_TESTFLIGHT_BUILD_NUMBER='+proposed+'\\n');
+          fs.appendFileSync(env.GITHUB_ENV,'ROOOM_TESTFLIGHT_BUILD_NUMBER='+proposed+'\n');
           console.log('Apple build version preflight PASS: previous maximum '+max+', candidate '+proposed);
           NODE
 
