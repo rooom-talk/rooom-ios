@@ -519,9 +519,25 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
     var monetization: RooomMonetization?
     var adReservationChanged: ((RooomAdInsets) -> Void)?
     private var adHandler: RooomAdMessageHandler?
+    private var canvasBackground = RooomInitialCanvas.color
+    private func applyCanvasBackground(_ color: UIColor) {
+        guard UIDevice.current.userInterfaceIdiom == .pad, let web = bridge?.webView else { return }
+        canvasBackground = color
+        // Keep the same canvas behind the page while WebKit replaces tiles or
+        // UIKit rotates/resizes it. Web still owns all layout and theme choices.
+        web.isOpaque = false
+        web.backgroundColor = color
+        web.scrollView.backgroundColor = color
+        web.underPageBackgroundColor = color
+        parent?.view.backgroundColor = color
+        web.window?.backgroundColor = color
+    }
     override func capacitorDidLoad() {
         super.capacitorDidLoad()
         guard let web = bridge?.webView else { return }
+        // Capacitor invokes this before viewDidLoad/loadWebView. Do not wait
+        // for a document or an ad capability/configure reply to paint the canvas.
+        applyCanvasBackground(canvasBackground)
         monetization = RooomMonetization(controller: self)
         let handler = RooomAdMessageHandler(self); adHandler = handler
         web.configuration.userContentController.addScriptMessageHandler(handler, contentWorld: .page, name: "rooomMonetization")
@@ -531,7 +547,11 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
         web.configuration.userContentController.addUserScript(WKUserScript(source: bootstrap, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         web.evaluateJavaScript(bootstrap, completionHandler: nil)
     }
-    override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); monetization?.layout() }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        applyCanvasBackground(canvasBackground) // window is attached now
+        monetization?.layout()
+    }
     fileprivate func handle(_ message: WKScriptMessage, reply: @escaping (Any?, String?) -> Void) {
         let origin = message.frameInfo.securityOrigin
         guard message.frameInfo.isMainFrame, origin.protocol == "https", origin.host == "rooom-talk.com",
@@ -552,7 +572,7 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
                 let color = UIColor(red: CGFloat(values[0].intValue) / 255,
                     green: CGFloat(values[1].intValue) / 255,
                     blue: CGFloat(values[2].intValue) / 255, alpha: 1)
-                self.parent?.view.backgroundColor = color
+                applyCanvasBackground(color)
                 reply(["ok":true],nil)
             case "configure":
                 guard let value = body["config"], JSONSerialization.isValidJSONObject(value) else { throw RooomAdError.invalidConfig }

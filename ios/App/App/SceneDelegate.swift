@@ -1,6 +1,13 @@
 import UIKit
 import Capacitor
 
+// First-paint fallback only; the trusted Web theme replaces it after loading.
+// Shared with the iPad launch storyboard through the named color asset.
+enum RooomInitialCanvas {
+    static let color = UIColor(named: "RooomInitialCanvas") ??
+        UIColor(red: 239.0 / 255, green: 239.0 / 255, blue: 239.0 / 255, alpha: 1)
+}
+
 // Existing UIKit keyboard owner; advertising never replaces its resize policy.
 final class RooomKeyboardContainerViewController: UIViewController {
 #if ROOOM_IMOBILE_ADS
@@ -23,8 +30,7 @@ final class RooomKeyboardContainerViewController: UIViewController {
         // The verified first-party page then synchronizes its actual --bg.
         // This is the native region OUTSIDE WKWebView, not a fake ad rectangle.
         if UIDevice.current.userInterfaceIdiom == .pad {
-            view.backgroundColor = UIColor(red: 239.0 / 255, green: 239.0 / 255,
-                                           blue: 239.0 / 255, alpha: 1)
+            view.backgroundColor = RooomInitialCanvas.color
         }
 #endif
         addChild(bridgeViewController)
@@ -158,6 +164,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
         window = UIWindow(windowScene: windowScene)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            window?.backgroundColor = RooomInitialCanvas.color
+        }
         window?.rootViewController = RooomKeyboardContainerViewController()
         window?.makeKeyAndVisible()
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
