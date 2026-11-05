@@ -286,6 +286,8 @@ private final class RooomSdkSlot: NSObject, IMobileSdkAdsDelegate {
     let slot: RooomAdSlot
     let view = RooomAdClippingView()
     var ready = false, failed = false, released = false, shown = false, nativeRequested = false
+    // Read-only status for TestFlight triage; no SDK behavior or retries change.
+    private(set) var diagnosticPhase = "created"
     weak var owner: RooomMonetization?
     private var nativeObject: ImobileSdkAdsNativeObject?
     private var creative: RooomNativeCreativeView?
@@ -294,25 +296,30 @@ private final class RooomSdkSlot: NSObject, IMobileSdkAdsDelegate {
         view.clipsToBounds = true; view.isHidden = true
     }
     func start() {
+        diagnosticPhase = "registering"
         if let old = Self.registered[slot.spotId] {
             // Layout/key are Web configuration, not SDK registration identity.
             // Switching tile/fullRow must not require a new binary or process.
             guard old.publisherId == slot.publisherId, old.mediaId == slot.mediaId,
-                  old.format == slot.format else { fail(); return }
+                  old.format == slot.format else { fail("registration-mismatch"); return }
         } else {
-            guard ImobileSdkAds.register(withPublisherID: slot.publisherId, mediaID: slot.mediaId, spotID: slot.spotId) else { fail(); return }
+            guard ImobileSdkAds.register(withPublisherID: slot.publisherId, mediaID: slot.mediaId, spotID: slot.spotId) else { fail("register-rejected"); return }
             Self.registered[slot.spotId] = slot
         }
         ImobileSdkAds.setSpotDelegate(slot.spotId, delegate: self)
-        if !ImobileSdkAds.start(bySpotID: slot.spotId) { fail() }
+        diagnosticPhase = "starting"
+        if !ImobileSdkAds.start(bySpotID: slot.spotId) { fail("start-rejected") }
+        else { diagnosticPhase = "awaiting-callback" }
     }
     func showBannerIfNeeded() {
         guard ready, !failed, !released, !shown, slot.format != .native, !view.isHidden else { return }
         shown = true
-        if !ImobileSdkAds.show(bySpotID: slot.spotId, view: view) { fail() }
+        if !ImobileSdkAds.show(bySpotID: slot.spotId, view: view) { fail("show-rejected") }
+        else { diagnosticPhase = "show-accepted" }
     }
-    private func fail() {
-        guard !released else { return }; failed = true; ready = false; view.isHidden = true
+    private func fail(_ phase: String = "sdk-failed-callback") {
+        guard !released else { return }
+        diagnosticPhase = phase; failed = true; ready = false; view.isHidden = true
         owner?.slotChanged(self, status: "failed")
     }
     func imobileSdkAdsSpot(_ spotId: String!, didReadyWithValue value: ImobileSdkAdsReadyResult) {
@@ -323,7 +330,10 @@ private final class RooomSdkSlot: NSObject, IMobileSdkAdsDelegate {
                 guard !self.nativeRequested, let controller = self.owner?.controller else { return }
                 self.nativeRequested = true
                 if !ImobileSdkAds.getNativeAdData(self.slot.spotId, viewController: controller, delegate: self) { self.fail() }
-            } else { self.ready = true; self.owner?.slotChanged(self, status: "ready") }
+            } else {
+                self.diagnosticPhase = "sdk-ready"
+                self.ready = true; self.owner?.slotChanged(self, status: "ready")
+            }
         }
     }
     func imobileSdkAdsSpot(_ spotId: String!, didFailWithValue value: ImobileSdkAdsFailResult) {
@@ -350,7 +360,7 @@ private final class RooomSdkSlot: NSObject, IMobileSdkAdsDelegate {
         creative?.badge.text = label
     }
     func release() {
-        guard !released else { return }; released = true
+        guard !released else { return }; diagnosticPhase = "released"; released = true
         view.removeFromSuperview(); nativeObject?.destroy(); nativeObject = nil
         ImobileSdkAds.setSpotDelegate(slot.spotId, delegate: nil)
         _ = ImobileSdkAds.stop(bySpotID: slot.spotId)
@@ -417,6 +427,34 @@ final class RooomMonetization {
     private func hideAll() {
         for e in entries.values { e.view.isHidden = true }
         if device != "tablet" { setReservation(RooomAdInsets()) }
+    }
+    // Read-only native snapshot. No spot IDs, SDK requests, user identifiers or URLs.
+    func diagnostics() -> [String: Any] {
+        let currentURL = web?.url ?? controller?.bridge?.config.serverURL
+        let safePage = RooomAdPolicy.advertisingPage(currentURL)
+        let dimensions = shell?.bounds.size ?? .zero
+        let validBounds = dimensions.width > 0 && dimensions.height > 0
+        let appActive = UIApplication.shared.applicationState == .active
+        let layout = RooomAdPolicy.fixedLayout(config: config, device: device,
+            bounds: dimensions, safe: RooomAdInsets(top: shell?.safeAreaInsets.top ?? 0,
+                left: shell?.safeAreaInsets.left ?? 0,
+                bottom: shell?.safeAreaInsets.bottom ?? 0,
+                right: shell?.safeAreaInsets.right ?? 0), keyboard: keyboard)
+        let selectedKeys = Set(layout.placements.map { $0.slot.key })
+        let slots = config.slots.filter { $0.device == device && $0.format != .native }.map { slot -> [String: Any] in
+            let entry = entries[slot.key]
+            return ["key": slot.key,
+                    "phase": entry?.diagnosticPhase ?? "not-created",
+                    "eligible": selectedKeys.contains(slot.key),
+                    "ready": entry?.ready ?? false,
+                    "failed": entry?.failed ?? false,
+                    "shown": entry?.shown ?? false]
+        }
+        return ["version": 1, "device": device, "configured": config.enabled && config.fixed,
+                "pageEligible": safePage, "shellReady": shell != nil, "validBounds": validBounds,
+                "appActive": appActive, "keyboard": keyboard,
+                "orientation": dimensions.width > dimensions.height ? "landscape" : "portrait",
+                "slots": slots]
     }
     private func entry(_ slot: RooomAdSlot) throws -> RooomSdkSlot {
         if let e = entries[slot.key] { return e }
@@ -574,6 +612,8 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
                     blue: CGFloat(values[2].intValue) / 255, alpha: 1)
                 applyCanvasBackground(color)
                 reply(["ok":true],nil)
+            case "diagnostics":
+                reply(engine.diagnostics(), nil)
             case "configure":
                 guard let value = body["config"], JSONSerialization.isValidJSONObject(value) else { throw RooomAdError.invalidConfig }
                 let data = try JSONSerialization.data(withJSONObject: value)
