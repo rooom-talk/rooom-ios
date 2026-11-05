@@ -139,3 +139,24 @@ test('iPad ad geometry is configurable from Web, with legacy defaults and right-
  assert.match(ad,/ImobileSdkAds\.show/);
  assert.match(scene,/setKeyboardVisible\(effectiveOverlap > 0\)/);
 });
+
+test('TestFlight native advertisement diagnostics are read-only and require the existing trusted bridge',()=>{
+ const source=fs.readFileSync('ios/App/App/RooomImobileBanner.swift','utf8');
+ assert.match(source,/case "diagnostics":\s*reply\(engine\.diagnostics\(\), nil\)/);
+ assert.match(source,/func diagnostics\(\) -> \[String: Any\]/);
+ assert.match(source,/diagnosticPhase = "awaiting-callback"/);
+ assert.match(source,/fail\("register-rejected"\)/);
+ assert.match(source,/fail\("start-rejected"\)/);
+ assert.match(source,/fail\("show-rejected"\)/);
+ assert.match(source,/diagnosticPhase = "sdk-ready"/);
+ assert.match(source,/status: "failed"/);
+ const audit = source.split('func diagnostics() -> [String: Any]')[1].split('private func entry(')[0];
+ assert.match(audit,/appActive/);
+ assert.match(audit,/pageEligible/);
+ assert.match(audit,/slots/);
+ assert.doesNotMatch(audit,/ImobileSdkAds\.|publisherId|mediaId|spotId|UserDefaults|HTTPURLSession|URLSession/);
+ // The new operation shares the same origin/main-frame guard as configure.
+ const bridge=source.split('fileprivate func handle(')[1];
+ assert.ok(bridge.indexOf('origin.host == "rooom-talk.com"') < bridge.indexOf('case "diagnostics":'));
+ assert.ok(bridge.indexOf('message.frameInfo.isMainFrame') < bridge.indexOf('case "diagnostics":'));
+});
