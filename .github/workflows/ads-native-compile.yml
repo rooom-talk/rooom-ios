@@ -6,6 +6,9 @@ on:
       - 'ios/App/App/RooomImobileBanner.swift'
       - 'ios/App/App/SceneDelegate.swift'
       - 'ios/App/App/PrivacyInfo.xcprivacy'
+      - 'ios/App/App/Info.plist'
+      - 'ios/App/App/LaunchScreen-iPad.storyboard'
+      - 'ios/App/App/Assets.xcassets/RooomInitialCanvas.colorset/**'
       - 'public/rooom-initial-ad-layout.json'
       - 'scripts/stage-imobile-official-sdk.mjs'
       - 'scripts/prepare-ios-imobile-sdk.mjs'
@@ -100,6 +103,8 @@ jobs:
               exit 1;
             }
           test -d "$RUNNER_TEMP/rooom-imobile-compile/Build/Products/Debug-iphonesimulator/App.app"
+          test -d "$RUNNER_TEMP/rooom-imobile-compile/Build/Products/Debug-iphonesimulator/App.app/LaunchScreen-iPad.storyboardc"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName~ipad' "$RUNNER_TEMP/rooom-imobile-compile/Build/Products/Debug-iphonesimulator/App.app/Info.plist")" = 'LaunchScreen-iPad'
 
       - name: Also compile iPhone/iPad device ARM64 in Release mode (unsigned)
         run: |

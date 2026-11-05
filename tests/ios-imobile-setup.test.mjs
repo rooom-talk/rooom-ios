@@ -111,7 +111,8 @@ test('unfilled native ad rail inherits RoooM body theme without changing ad rese
  assert.match(ad,/message\.frameInfo\.isMainFrame/);
  assert.match(ad,/origin\.host == "rooom-talk.com"/);
  assert.match(ad,/values\.allSatisfy/);
- assert.match(ad,/self\.parent\?\.view\.backgroundColor = color/);
+ assert.match(ad,/parent\?\.view\.backgroundColor = color/);
+ assert.match(ad,/applyCanvasBackground\(color\)/);
  // Background updates are presentation-only; do not touch reserved layout.
  const backgroundCase=ad.split('case "background":')[1].split('case "configure":')[0];
  assert.doesNotMatch(backgroundCase,/setReservation|fixedLayout|adReservationChanged|ImobileSdkAds|clear\(/);
