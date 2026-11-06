@@ -37,7 +37,7 @@ final class Bridge { var webView:Web?=Web() }
 final class Engine { var reservation=Insets(bottom:84) }
 final class Controller {
  var bridge:Bridge?=Bridge(), monetization:Engine?=Engine()
- var phoneOverlayDocument="document-A",phoneOverlayRequested=false
+ var phoneOverlayDocument="document-A",phoneOverlayRequested=false,phoneOverlayLayoutReady=false
 }
 final class Harness {
  let bridgeViewController=Controller(),view=View()
@@ -51,30 +51,31 @@ final class Harness {
 `+bodies.join('\n')+String.raw`
 }
 let h=Harness()
-h.layout(); h.requireBottom(84,"old Web legacy"); precondition(h.web.calls.isEmpty)
+h.layout(); h.requireBottom(0,"missing Web keeps full canvas; SDK remains gated"); precondition(h.web.calls.isEmpty)
 h.bridgeViewController.phoneOverlayRequested=true; h.layout()
-h.requireBottom(84,"pending Web never covers composer"); precondition(h.web.calls.count==1)
+h.requireBottom(0,"pending Web never covers composer"); precondition(h.web.calls.count==1)
 precondition(h.web.calls.last!.contains("\"viewportHeight\":844"), "full target height includes reserved area")
 h.layout(); precondition(h.web.calls.count==1,"bounded evaluation")
-h.web.reply(); h.requireBottom(0,"acknowledged full-height WebView")
+h.web.reply(); h.requireBottom(0,"acknowledged full-height WebView"); precondition(h.bridgeViewController.phoneOverlayLayoutReady)
 h.lastKeyboardOverlap=320;h.engine.reservation.bottom=0;h.layout()
 precondition(h.web.calls.last!.contains("\"viewportHeight\":524"), "keyboard excluded from full target height")
 h.requireBottom(320,"keyboard owner preserved");h.web.reply();h.requireBottom(320,"no ad inset while keyboard open")
-h.lastKeyboardOverlap=0;h.engine.reservation.bottom=84;h.layout();h.requireBottom(84,"close waits for new content exclusion")
+h.lastKeyboardOverlap=0;h.engine.reservation.bottom=84;h.layout();h.requireBottom(0,"close waits for new content exclusion")
 h.web.reply();h.requireBottom(0,"close expands after ack")
 h.engine.reservation.bottom=0;h.layout();h.web.reply();h.requireBottom(0,"failure removes gap")
 precondition(h.web.calls.last!.contains("\"bottom\":0"))
-h.engine.reservation.bottom=84;h.layout();h.requireBottom(84,"recovery pending")
+h.engine.reservation.bottom=84;h.layout();h.requireBottom(0,"recovery pending")
 h.view.bounds.size.width=430;h.layout();precondition(h.web.replies.count==2)
-h.web.reply();h.requireBottom(84,"stale resize ack ignored")
+h.web.reply();h.requireBottom(0,"stale resize ack ignored")
 h.web.reply();h.requireBottom(0,"new resize ack")
-h.bridgeViewController.phoneOverlayRequested=false;h.layout();h.requireBottom(84,"rollback or zoom restores legacy first")
-h.web.reply();h.requireBottom(84,"disabled remains legacy")
+h.bridgeViewController.phoneOverlayRequested=false;h.layout();h.requireBottom(0,"rollback or zoom restores legacy first")
+h.web.reply();h.requireBottom(0,"disabled remains full canvas")
 h.bridgeViewController.phoneOverlayRequested=true;h.layout()
 h.bridgeViewController.phoneOverlayDocument="document-B";h.bridgeViewController.phoneOverlayRequested=false;h.web.isLoading=true;h.layout()
-h.web.reply();h.requireBottom(84,"previous document ack ignored")
-h.web.reply(false);h.web.isLoading=false;h.layout();h.requireBottom(84,"new document defaults legacy")
-h.bridgeViewController.phoneOverlayRequested=true;h.layout();h.web.reply(false);h.requireBottom(84,"missing Web helper remains legacy")
+h.web.reply();h.requireBottom(0,"previous document ack ignored")
+h.web.reply(false);h.web.isLoading=false;h.layout();h.requireBottom(0,"new document stays full canvas")
+h.bridgeViewController.phoneOverlayRequested=true;h.layout();h.web.reply(false);h.requireBottom(0,"missing Web helper keeps full canvas")
+precondition(!h.bridgeViewController.phoneOverlayLayoutReady,"rejected Web geometry never permits SDK visibility")
 let n=h.web.calls.count;h.layout();precondition(h.web.calls.count==n,"no retry loop after failed apply")
 UIDevice.current.userInterfaceIdiom = .pad
 let p=Harness();p.engine.reservation=Insets(bottom:110,left:316,right:7);p.bridgeViewController.phoneOverlayRequested=true;p.layout()
@@ -85,9 +86,9 @@ test('actual presentation methods are extracted; SDK slots and geometry stay unc
  assert.ok(program.includes(bodies[0])&&program.includes(bodies[1]));
  // Rotation repair changes only the isolated Web728 class and its placement.
  // Keep the actual SDK slot implementation and pure policy pinned to PR #17.
- const immutable=(ads.slice(0,ads.indexOf('// The publisher\'s Web 728x90'))+
+ const immutable=(ads.slice(0,ads.indexOf('// A last verified Web configuration'))+
    ads.slice(ads.indexOf('// SDK-owned native object:'),ads.indexOf('final class RooomMonetization {'))).replaceAll('\r\n','\n');
- assert.equal(crypto.createHash('sha256').update(immutable).digest('hex'),'b70eec5d96cb8b71282b9cd5c4818b8aaf59a95b0a01d6d0ad4427b7cd50ff64');
+ assert.equal(crypto.createHash('sha256').update(immutable).digest('hex'),'591e4cb7fdf84cab90e3e821dc1716c82767dc8669d1563c78082432dae4d71d');
 });
 test('actual Swift container methods: acknowledgement and lifecycle',{
  skip:process.platform!=='darwin'?'Requires macOS Swift; extraction/SDK integrity checked here':false,timeout:120000

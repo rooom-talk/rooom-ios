@@ -31,9 +31,7 @@ final class RooomKeyboardContainerViewController: UIViewController {
         // RoooM TOP's initial light-theme canvas, before the Web theme arrives.
         // The verified first-party page then synchronizes its actual --bg.
         // This is the native region OUTSIDE WKWebView, not a fake ad rectangle.
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            view.backgroundColor = RooomInitialCanvas.color
-        }
+        view.backgroundColor = RooomInitialCanvas.color
 #endif
         addChild(bridgeViewController)
         let bridgeView = bridgeViewController.view!
@@ -130,7 +128,9 @@ final class RooomKeyboardContainerViewController: UIViewController {
     // fetching/show/failure, iPad geometry and the keyboard owner stay unchanged.
     private func phonePresentationBottom(_ reserved: CGFloat) -> CGFloat {
         guard UIDevice.current.userInterfaceIdiom == .phone,
-              let web = bridgeViewController.bridge?.webView else { return reserved }
+              let web = bridgeViewController.bridge?.webView else {
+            return UIDevice.current.userInterfaceIdiom == .phone ? 0 : reserved
+        }
         let document = bridgeViewController.phoneOverlayDocument
         let enabled = bridgeViewController.phoneOverlayRequested && !web.isLoading &&
             RooomAdPolicy.advertisingPage(web.url)
@@ -140,24 +140,28 @@ final class RooomKeyboardContainerViewController: UIViewController {
         if phoneOverlayRequest != key {
             let hadRequest = phoneOverlayRequest != nil
             phoneOverlayRequest = key; phoneOverlayApplied = nil
+            bridgeViewController.phoneOverlayLayoutReady = false
             if enabled || hadRequest {
                 let payload: [String: Any] = ["version":1,"documentId":document,
                     "enabled":enabled,"bottom":enabled ? Double(reserved) : 0,
-                    "viewportHeight":Double(view.bounds.height - lastKeyboardOverlap)]
+                    "viewportHeight":Double(view.bounds.height - lastKeyboardOverlap), "fullCanvas":true]
                 if let data = try? JSONSerialization.data(withJSONObject: payload),
                    let json = String(data: data, encoding: .utf8) {
-                    let script = "window.__rooomPhoneAdOverlay?.apply(\(json)) === true"
+                    let script = "getComputedStyle(document.documentElement).getPropertyValue('--rooom-phone-full-canvas-ready').trim() === '1' && window.__rooomPhoneAdOverlay?.apply(\(json)) === true"
                     web.evaluateJavaScript(script) { [weak self] value, error in
                         guard let self, error == nil, value as? Bool == true,
                               self.phoneOverlayRequest == key,
                               self.bridgeViewController.phoneOverlayDocument == document else { return }
                         self.phoneOverlayApplied = key
+                        self.bridgeViewController.phoneOverlayLayoutReady = enabled
                         self.updateBridgeBottom()
                     }
                 }
             }
         }
-        return enabled && phoneOverlayApplied == key ? 0 : reserved
+        // The canvas never shrinks for ads. Missing Web support hides the ad
+        // via phoneOverlayLayoutReady instead of exposing a native white footer.
+        return 0
     }
 #endif
     private func applyKeyboardFrame(_ notification: Notification) {

@@ -207,7 +207,7 @@ enum RooomAdBootstrap {
             // Native rail is outside WKWebView. Match its background to the
             // actual first-party RoooM CSS theme, even when no ad is filled.
             // This changes only appearance; never changes a placement/reservation.
-            if (\(isTablet ? "true" : "false") && !window.__rooomNativeRailBackgroundSync) {
+            if (!window.__rooomNativeRailBackgroundSync) {
               window.__rooomNativeRailBackgroundSync = true;
               const syncRailBackground = function() {
                 try {
@@ -503,6 +503,7 @@ final class RooomMonetization {
         initialLayout = RooomInitialAdLayout.restore(
             cached: UserDefaults.standard.data(forKey: RooomInitialAdLayout.cacheKey), bundled: seed)
         self.controller = controller
+        controller.installPhoneSurfaceSeed(initialLayout)
         // Drop creatives/permission on navigation, retain only verified geometry.
         navigation = web?.observe(\.isLoading, options: [.new]) { [weak self] web, _ in
             if web.isLoading { self?.beginDocument() }
@@ -517,6 +518,7 @@ final class RooomMonetization {
         // Web stays authoritative, including OFF. Persist only after validation
         // through the existing trusted main-frame bridge; no eager SDK loading.
         initialLayout = valid
+        controller?.installPhoneSurfaceSeed(valid)
         if let data = try? JSONEncoder().encode(valid) {
             UserDefaults.standard.set(data, forKey: RooomInitialAdLayout.cacheKey)
         }
@@ -643,7 +645,8 @@ final class RooomMonetization {
         for p in desired.placements {
             guard let e = try? entry(p.slot) else { continue }
             if e.view.superview !== shell { shell.addSubview(e.view) }
-            e.view.frame = p.rect; e.view.isHidden = e.failed
+            e.view.frame = p.rect
+            e.view.isHidden = e.failed || (device == "phone" && controller?.phoneOverlayLayoutReady != true)
         }
         for p in desired.placements { entries[p.slot.key]?.showBannerIfNeeded() }
         if device == "phone" {
@@ -721,14 +724,34 @@ private final class RooomAdMessageHandler: NSObject, WKScriptMessageHandlerWithR
 final class RooomAdsBridgeViewController: CAPBridgeViewController {
     var monetization: RooomMonetization?
     var adReservationChanged: ((RooomAdInsets) -> Void)?
-    // Per-document presentation agreement; old/missing Web keeps legacy resize.
+    // Per-document presentation agreement; missing Web keeps full height and hides ads.
     private(set) var phoneOverlayDocument = UUID().uuidString
     private(set) var phoneOverlayRequested = false
+    var phoneOverlayLayoutReady = false {
+        didSet { if oldValue != phoneOverlayLayoutReady { monetization?.layout() } }
+    }
+    func installPhoneSurfaceSeed(_ config: RooomAdConfig) {
+        guard UIDevice.current.userInterfaceIdiom == .phone, let content = bridge?.webView?.configuration.userContentController else { return }
+        let source = RooomPhoneSurfaceBootstrap.script(config: config)
+        // Materialize a Swift array before mutating the WebKit-owned collection.
+        let old = content.userScripts.map { $0 }
+        if old.contains(where: { $0.source == source }) { return }
+        let seed = WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        // Replace only our seed, preserving all existing script content/order.
+        var replaced = false
+        content.removeAllUserScripts()
+        for script in old {
+            if script.source.hasPrefix(RooomPhoneSurfaceBootstrap.marker) {
+                if !replaced { content.addUserScript(seed); replaced = true }
+            } else { content.addUserScript(script) }
+        }
+        if !replaced { content.addUserScript(seed) }
+    }
     private var overlayNavigation: NSKeyValueObservation?
     private var adHandler: RooomAdMessageHandler?
     private var canvasBackground = RooomInitialCanvas.color
     private func applyCanvasBackground(_ color: UIColor) {
-        guard UIDevice.current.userInterfaceIdiom == .pad, let web = bridge?.webView else { return }
+        guard let web = bridge?.webView else { return }
         canvasBackground = color
         // Keep the same canvas behind the page while WebKit replaces tiles or
         // UIKit rotates/resizes it. Web still owns all layout and theme choices.
@@ -751,6 +774,7 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
             if web.isLoading {
                 self.phoneOverlayDocument = UUID().uuidString
                 self.phoneOverlayRequested = false
+                self.phoneOverlayLayoutReady = false
             }
             self.adReservationChanged?(self.monetization?.reservation ?? RooomAdInsets())
         }
@@ -776,7 +800,7 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
         do {
             switch op {
             case "capabilities": reply(["version":1,"implemented":true,"platform":"ios","device":engine.device,
-                "phoneOverlay":["version":1,"documentId":phoneOverlayDocument],
+                "phoneOverlay":["version":1,"documentId":phoneOverlayDocument,"surface":"full-height-v2"],
                 "fixedLayoutReservation":"before-fill-v1",
                 "tabletPortraitWebBanner":"isolated-wkwebview-v1",
                 "formats":["banner","largeBanner","rectangle","tabletBanner","native"],"maxSlots":RooomAdPolicy.maxSlots],nil)
@@ -819,3 +843,34 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
     }
 }
 #endif
+
+// Initial presentation data only. CSS lives in the render-blocking Web shell.
+enum RooomPhoneSurfaceBootstrap {
+    static let marker = "// RoooM phone full-canvas seed v2\n"
+    static func script(config: RooomAdConfig) -> String {
+        let valid = (try? config.validated()) ?? .off
+        let slot = valid.enabled && valid.fixed ? valid.slots.first(where: { $0.device == "phone" && $0.role == "phone.bottom" }) : nil
+        let height = slot.map { Double($0.format.size.height + (valid.presentation ?? .standard).bottomGap) } ?? 0
+        return marker + """
+        if (window === window.top && location.origin === 'https://rooom-talk.com') {
+          const page = ['/', '/index.html'].includes(location.pathname) ? 'home' : location.pathname === '/room.html' ? 'room' : null;
+          if (page) {
+            const apply = function() {
+            const root = document.documentElement;
+            if (!root) return false;
+            root.setAttribute('data-rooom-phone-full-canvas', page);
+            if (\(height) > 0) {
+              root.setAttribute('data-rooom-phone-ad-overlay', page);
+              root.style.setProperty('--rooom-phone-ad-occupied-bottom', 'calc(\(height)px + var(--rooom-safe-bottom, env(safe-area-inset-bottom, 0px)))');
+            }
+            return true;
+            };
+            if (!apply()) {
+              const observer = new MutationObserver(function() { if (apply()) observer.disconnect(); });
+              observer.observe(document, {childList:true});
+            }
+          }
+        }
+        """
+    }
+}

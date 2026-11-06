@@ -87,6 +87,8 @@ private final class FakeWeb { var url: URL? = URL(string: "https://rooom-talk.co
 private final class FakeBridgeConfig { var serverURL: URL? = URL(string: "https://rooom-talk.com/") }
 private final class FakeBridge { var config = FakeBridgeConfig() }
 private final class FakeController {
+    var phoneOverlayLayoutReady = true
+    func installPhoneSurfaceSeed(_ config: RooomAdConfig) {}
     var bridge: FakeBridge? = FakeBridge()
     var adReservationChanged: ((RooomAdInsets) -> Void)?
 }
@@ -191,6 +193,20 @@ try runCase("100069 SDK_READY without Ready callback reproduces zero show") {
     owner.clear()
 }
 ` : String.raw`
+try runCase("phone SDK view waits for geometry ACK without changing SDK registration or Ready") {
+    let owner = RooomMonetization(); owner.controller!.phoneOverlayLayoutReady = false
+    try owner.configure(config)
+    let entry = owner.testEntry()
+    require(owner.reservation.bottom == 84 && entry.view.isHidden && count("show:") == 0, "space prepared but ad cannot cover unacknowledged UI")
+    require(count("register:") == 1 && count("start:") == 1, "SDK startup unchanged")
+    owner.controller!.phoneOverlayLayoutReady = true; owner.layout()
+    require(!entry.view.isHidden && count("show:") == 1 && !entry.ready, "ACK shows through existing path without fake Ready")
+    owner.controller!.phoneOverlayLayoutReady = false; owner.layout()
+    require(entry.view.isHidden && entry.shown, "new geometry hides existing creative without resetting SDK shown state")
+    owner.controller!.phoneOverlayLayoutReady = true; owner.layout()
+    require(!entry.view.isHidden && count("show:") == 1, "restore visibility without duplicate show")
+    owner.clear()
+}
 try runCase("cold start reserves verified geometry before configuration without SDK calls") {
     let owner = RooomMonetization(); owner.testSeed(config)
     owner.web!.url = nil
