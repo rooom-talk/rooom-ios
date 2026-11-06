@@ -178,7 +178,8 @@ check("isolated Web banner reserves exactly 728x90 plus safe area without an SDK
  assert(phone.webBannerRect==nil && phone.reserved==RooomAdInsets())
  let data=try JSONEncoder().encode(c)
  assert(RooomInitialAdLayout.decode(data)==c)
- assert(RooomInitialAdLayout.restore(cached:try JSONEncoder().encode(RooomAdConfig.off),bundled:data) == .off)
+ let offData=try JSONEncoder().encode(RooomAdConfig.off)
+ assert(RooomInitialAdLayout.restore(cached:offData,bundled:data) == .off)
 }
 check("Web surface rejects untrusted URLs and dual SDK/Web bottom reservations") {
  for url in ["https://rooom-test2.web.app/ad.html", "https://example.com", RooomTabletWebBanner.approvedURL+"?x=1"] {
