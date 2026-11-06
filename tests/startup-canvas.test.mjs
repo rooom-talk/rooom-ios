@@ -15,7 +15,7 @@ test('initial iPad canvas is set before document loading and window visibility',
 });
 test('same existing trusted Web background message paints every exposed native surface',()=>{
  const apply=source.slice(source.indexOf('private func applyCanvasBackground'),source.indexOf('override func capacitorDidLoad'));
- assert.match(apply,/guard UIDevice.current.userInterfaceIdiom == \.pad/);
+ assert.match(apply,/guard let web = bridge\?\.webView/); // same canvas path now covers phone too
  for(const target of ['web','web.scrollView','parent?.view','web.window?']) assert.ok(apply.includes(target+'.backgroundColor = color'));
  assert.ok(apply.includes('web.underPageBackgroundColor = color'));
  assert.ok(apply.includes('web.isOpaque = false'));

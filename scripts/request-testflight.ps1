@@ -69,6 +69,14 @@ foreach($file in $webChecks.Keys) {
         if (!$webHelper.Content.Contains($signature)) { throw ('Deploy the iPad 728 Web assets before requesting upload: '+$file) }
     }
 }
+# Full-canvas candidates require the first-paint Web contract before upload.
+# A missing helper keeps ads hidden safely, but is not a usable release candidate.
+$surfaceCss = Invoke-WebRequest -UseBasicParsing -Uri 'https://rooom-talk.com/src/core/app-viewport-shell.css' -Headers @{'Cache-Control'='no-cache'}
+$surfaceHelper = Invoke-WebRequest -UseBasicParsing -Uri 'https://rooom-talk.com/src/features/ads/native-phone-ad-overlay.mjs' -Headers @{'Cache-Control'='no-cache'}
+if ($surfaceCss.StatusCode -ne 200 -or !$surfaceCss.Content.Contains('--rooom-phone-full-canvas-ready:1') -or
+    $surfaceHelper.StatusCode -ne 200 -or !$surfaceHelper.Content.Contains("cap.phoneOverlay.surface === 'full-height-v2'")) {
+    throw 'Publish the full-canvas Web CSS/helper first, then run this same TestFlight command again'
+}
 Write-Host ('Verified merged candidate '+$ApprovedSha+'; app com.rooom.talk; iOS 1.6; generation 3.')
 Write-Host 'The existing Mac workflow selects a build number greater than Apple latest. No Hosting or public Store release.'
 if ($CheckOnly) { Write-Host 'CHECK ONLY: no workflow dispatched, no signing or upload.'; return }
