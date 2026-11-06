@@ -395,11 +395,11 @@ private final class RooomSdkSlot: NSObject, IMobileSdkAdsDelegate {
         if !ImobileSdkAds.start(bySpotID: slot.spotId) { fail("start-rejected") }
         else { diagnosticPhase = "awaiting-callback" }
     }
-    func showBannerIfNeeded(allowPending: Bool = false) {
+    func showBannerIfNeeded() {
         // Official 2.3.4 inline sample attaches the View and calls show after
-        // start, without waiting for Ready. Only the iPad fixed rollout uses
-        // that path; iPhone and native-feed behavior keep their existing gate.
-        guard (ready || allowPending), !failed, !released, !shown,
+        // start, without waiting for Ready. Use that same path for both fixed
+        // devices. Ready and DidShow remain actual callbacks, not show's Bool.
+        guard !failed, !released, !shown,
               slot.format != .native, !view.isHidden, view.window != nil else { return }
         shown = true
         if !ImobileSdkAds.show(bySpotID: slot.spotId, view: view) { fail("show-rejected") }
@@ -417,7 +417,7 @@ private final class RooomSdkSlot: NSObject, IMobileSdkAdsDelegate {
             guard let self, !self.released else { return }
             // The SDK owns retry timing. A later Ready after a transient failure
             // must restore this slot; never start an application retry loop.
-            if self.slot.device == "tablet", self.slot.format != .native { self.failed = false }
+            if self.slot.format != .native { self.failed = false }
             guard !self.failed else { return }
             if self.slot.format == .native {
                 guard !self.nativeRequested, let controller = self.owner?.controller else { return }
@@ -593,12 +593,13 @@ final class RooomMonetization {
             hideAll(); setReservation(RooomAdInsets()); return
         }
         let s = shell.safeAreaInsets, safe = RooomAdInsets(top: s.top, left: s.left, bottom: s.bottom, right: s.right)
-        let ready = Set(entries.values.filter { $0.ready && !$0.failed }.map { $0.slot.key })
-        // Only iPad uses the pre-document layout. iPhone retains its ready-only
-        // reservation and existing configuration lifecycle.
-        let geometry = device == "tablet" ? initialLayout : config
-        setReservation(RooomAdPolicy.fixedLayout(config: geometry, device: device, bounds: shell.bounds.size,
-            safe: safe, keyboard: keyboard, readyKeys: ready, reserveTabletBottom: device == "tablet").reserved)
+        // Preserve the iPad pre-document/loading geometry. iPhone reserves only
+        // for an accepted inline show below, after any synchronous SDK failure.
+        if device == "tablet" {
+            let ready = Set(entries.values.filter { $0.ready && !$0.failed }.map { $0.slot.key })
+            setReservation(RooomAdPolicy.fixedLayout(config: initialLayout, device: device, bounds: shell.bounds.size,
+                safe: safe, keyboard: keyboard, readyKeys: ready, reserveTabletBottom: true).reserved)
+        }
         guard UIApplication.shared.applicationState == .active else { hideAll(); return }
         let desired = RooomAdPolicy.fixedLayout(config: config, device: device, bounds: shell.bounds.size, safe: safe, keyboard: keyboard)
         tabletWebAd?.view.isHidden = true
@@ -620,9 +621,18 @@ final class RooomMonetization {
         for p in desired.placements {
             guard let e = try? entry(p.slot) else { continue }
             if e.view.superview !== shell { shell.addSubview(e.view) }
-            e.view.frame = p.rect; e.view.isHidden = (device != "tablet" && !e.ready) || e.failed
+            e.view.frame = p.rect; e.view.isHidden = e.failed
         }
-        for p in desired.placements { entries[p.slot.key]?.showBannerIfNeeded(allowPending: device == "tablet") }
+        for p in desired.placements { entries[p.slot.key]?.showBannerIfNeeded() }
+        if device == "phone" {
+            // show acceptance is permission to reserve space, not evidence of
+            // Ready/fill. Commit the inset in this layout pass so a missing Ready
+            // callback cannot leave a submitted view over the Web composer.
+            // Explicit failure removes it; keyboard/OFF still use the same policy.
+            let submitted = Set(entries.values.filter { $0.shown && !$0.failed && !$0.released }.map { $0.slot.key })
+            setReservation(RooomAdPolicy.fixedLayout(config: config, device: device, bounds: shell.bounds.size,
+                safe: safe, keyboard: keyboard, readyKeys: submitted).reserved)
+        }
     }
     fileprivate func slotChanged(_ entry: RooomSdkSlot, status: String) {
         guard entries[entry.slot.key] === entry else { return }

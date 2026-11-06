@@ -7,9 +7,15 @@ const scene=fs.readFileSync('ios/App/App/SceneDelegate.swift','utf8');
 test('initial geometry never grants permission to start SDK requests',()=>{
  assert.match(swift,/private var config = RooomAdConfig.off/);
  assert.match(swift,/releaseCreatives\(\); config = \.off; layout\(\)/);
- assert.match(swift,/let geometry = device == "tablet" \? initialLayout : config/);
+ assert.match(swift,/if device == "tablet" \{\s*let ready = Set\(entries\.values\.filter/);
+ assert.match(swift,/setReservation\(RooomAdPolicy.fixedLayout\(config: initialLayout,/);
  assert.match(swift,/let desired = RooomAdPolicy.fixedLayout\(config: config,/);
- assert.ok(swift.indexOf('setReservation(RooomAdPolicy.fixedLayout(config: geometry')<swift.indexOf('let desired = RooomAdPolicy.fixedLayout(config: config'));
+ assert.ok(swift.indexOf('setReservation(RooomAdPolicy.fixedLayout(config: initialLayout')<swift.indexOf('let desired = RooomAdPolicy.fixedLayout(config: config'));
+ const phone=swift.slice(swift.indexOf('if device == "phone" {',swift.indexOf('func layout()')),
+   swift.indexOf('fileprivate func slotChanged'));
+ assert.match(phone,/\$0\.shown && !\$0\.failed && !\$0\.released/);
+ assert.match(phone,/fixedLayout\(config: config,/);
+ assert.doesNotMatch(phone,/initialLayout/);
 });
 test('Web update validates before persisting, and unknown pages release geometry',()=>{
  const configure=swift.slice(swift.indexOf('func configure('),swift.indexOf('private func releaseCreatives'));
