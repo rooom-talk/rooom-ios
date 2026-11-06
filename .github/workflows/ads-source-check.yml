@@ -48,3 +48,7 @@ jobs:
           "$RUNNER_TEMP/wk-bootstrap" --phone
           "$RUNNER_TEMP/wk-bootstrap" --home
           "$RUNNER_TEMP/wk-bootstrap" --external
+      - name: Compare offline iPad WK placement in real UIKit (no SDK or backend)
+        env:
+          ROOOM_IPAD_PROBE_REPORT: ${{ runner.temp }}/ipad-rotation-report.json
+        run: node tests/ipad-rotation-simulator.mjs

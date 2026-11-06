@@ -261,21 +261,31 @@ import Capacitor
 private final class RooomTabletWebAd: NSObject, WKNavigationDelegate, WKUIDelegate {
     let view: WKWebView
     private(set) var phase = "created"
-    init(url: URL) {
+    init(url: URL, frame: CGRect) {
         let settings = WKWebViewConfiguration()
         settings.websiteDataStore = .nonPersistent()
         settings.userContentController = WKUserContentController()
         settings.applicationNameForUserAgent = "RoooMAdSurface/1"
         settings.preferences.javaScriptCanOpenWindowsAutomatically = false
-        view = WKWebView(frame: CGRect(x: 0, y: 0, width: 728, height: 90), configuration: settings)
+        // Construct at the actual destination before entering the rotating
+        // shell. Attaching at (0,0) then changing frame creates a fly-in path.
+        view = WKWebView(frame: frame, configuration: settings)
         super.init()
+        view.isHidden = true
         view.navigationDelegate = self; view.uiDelegate = self
         view.isOpaque = false; view.backgroundColor = .clear
+        view.scrollView.backgroundColor = .clear
+        view.underPageBackgroundColor = .clear
         view.scrollView.isScrollEnabled = false
         view.scrollView.contentInsetAdjustmentBehavior = .never
         view.scrollView.bounces = false
         phase = "loading-document"
         view.load(URLRequest(url: url))
+    }
+    func place(in shell: UIView, frame: CGRect) {
+        view.frame = frame
+        if view.superview !== shell { shell.addSubview(view) }
+        view.isHidden = false
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         phase = "document-loaded" // Never equate this with an ad impression.
@@ -605,10 +615,9 @@ final class RooomMonetization {
         tabletWebAd?.view.isHidden = true
         if let rect = desired.webBannerRect, let banner = config.tabletPortraitWebBanner,
            let url = URL(string: banner.url) {
-            if tabletWebAd == nil { tabletWebAd = RooomTabletWebAd(url: url) }
+            if tabletWebAd == nil { tabletWebAd = RooomTabletWebAd(url: url, frame: rect) }
             if let ad = tabletWebAd {
-                if ad.view.superview !== shell { shell.addSubview(ad.view) }
-                ad.view.frame = rect; ad.view.isHidden = false
+                ad.place(in: shell, frame: rect)
             }
         } else {
             // Hiding WKWebView alone does not suspend provider JavaScript.

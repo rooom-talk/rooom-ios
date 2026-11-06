@@ -92,9 +92,10 @@ private final class FakeController {
 }
 private final class RooomTabletWebAd {
     let view = UIView()
-    static var created = 0
-    init(url: URL) { Self.created += 1 }
-    func release() { view.removeFromSuperview() }
+    static var created = 0, released = 0
+    init(url: URL, frame: CGRect = .zero) { Self.created += 1; view.frame = frame; view.isHidden = true }
+    func place(in shell: UIView, frame: CGRect) { view.frame = frame; if view.superview !== shell { shell.addSubview(view) }; view.isHidden = false }
+    func release() { Self.released += 1; view.removeFromSuperview() }
 }
 private enum ImobileSdkAds {
     static var registerOK = true, delegateOK = true, startOK = true, showOK = true
@@ -170,7 +171,7 @@ private var config: RooomAdConfig {
 private func count(_ prefix: String) -> Int { ImobileSdkAds.calls.filter { $0.hasPrefix(prefix) }.count }
 private func reset() {
     ImobileSdkAds.reset(); RooomSdkSlot.registered.removeAll(); DispatchQueue.main.pending.removeAll()
-    UIApplication.shared.applicationState = .active; RooomTabletWebAd.created = 0
+    UIApplication.shared.applicationState = .active; RooomTabletWebAd.created = 0; RooomTabletWebAd.released = 0
 }
 private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
     if !condition() { fatalError(message) }
@@ -278,7 +279,18 @@ try runCase("iPad rectangles, Web728 and failure reservation remain unchanged") 
     owner.shell!.frame = CGRect(x: 0, y: 0, width: 820, height: 1180); owner.layout()
     require(owner.reservation.bottom == 110 && owner.reservation.left == 0 && RooomTabletWebAd.created == 1, "portrait Web728 plus safe area")
     require(count("show:") == 2 && count("register:1951334") == 0, "phone SDK never activated on iPad")
+    owner.layout(); require(RooomTabletWebAd.created == 1, "same portrait layout keeps one view")
+    owner.shell!.frame = CGRect(x: 0, y: 0, width: 1180, height: 820); owner.layout()
+    require(owner.reservation.left == 316 && owner.reservation.bottom == 0 && RooomTabletWebAd.released == 1, "landscape releases portrait surface")
+    owner.shell!.frame = CGRect(x: 0, y: 0, width: 820, height: 1180); owner.layout()
+    require(RooomTabletWebAd.created == 2 && owner.reservation.bottom == 110, "portrait return creates exactly one replacement")
     owner.setKeyboardVisible(true); require(owner.reservation == RooomAdInsets(), "iPad keyboard unchanged")
+    require(RooomTabletWebAd.released == 2, "keyboard releases portrait surface")
+    owner.setKeyboardVisible(false); require(RooomTabletWebAd.created == 3 && owner.reservation.bottom == 110, "keyboard close restores portrait surface once")
+    UIApplication.shared.applicationState = .inactive; owner.layout()
+    require(RooomTabletWebAd.released == 3, "background releases surface")
+    UIApplication.shared.applicationState = .active; owner.layout()
+    require(RooomTabletWebAd.created == 4, "foreground restores once")
     owner.clear()
 }
 `)+ '\nprint("ACTUAL METHOD HARNESS COMPLETE; UIKit/SDK doubles only, no real ad rendering/network")\n';

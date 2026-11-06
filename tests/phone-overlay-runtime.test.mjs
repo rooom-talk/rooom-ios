@@ -79,10 +79,13 @@ let p=Harness();p.engine.reservation=Insets(bottom:110,left:316,right:7);p.bridg
 p.requireBottom(110,"iPad reservation unchanged");precondition(p.bridgeLeadingConstraint.constant==316 && p.bridgeTrailingConstraint.constant == -7 && p.web.calls.isEmpty)
 print("PHONE OVERLAY ACTUAL CONTAINER METHODS PASS: ack, legacy, keyboard, failure, resize, navigation, rollback, iPad; UIKit/Web doubles")
 `;
-test('actual presentation methods are extracted; SDK engine and geometry stay unchanged',()=>{
+test('actual presentation methods are extracted; SDK slots and geometry stay unchanged',()=>{
  assert.ok(program.includes(bodies[0])&&program.includes(bodies[1]));
- const immutable=ads.slice(0,ads.indexOf('private final class RooomAdMessageHandler:')).replaceAll('\r\n','\n');
- assert.equal(crypto.createHash('sha256').update(immutable).digest('hex'),'2ce139eee775f5b8006f16ff58bf7301ecbff0afe512a7ebe42503834bfaa8b2');
+ // Rotation repair changes only the isolated Web728 class and its placement.
+ // Keep the actual SDK slot implementation and pure policy pinned to PR #17.
+ const immutable=(ads.slice(0,ads.indexOf('// The publisher\'s Web 728x90'))+
+   ads.slice(ads.indexOf('// SDK-owned native object:'),ads.indexOf('final class RooomMonetization {'))).replaceAll('\r\n','\n');
+ assert.equal(crypto.createHash('sha256').update(immutable).digest('hex'),'b70eec5d96cb8b71282b9cd5c4818b8aaf59a95b0a01d6d0ad4427b7cd50ff64');
 });
 test('actual Swift container methods: acknowledgement and lifecycle',{
  skip:process.platform!=='darwin'?'Requires macOS Swift; extraction/SDK integrity checked here':false,timeout:120000
