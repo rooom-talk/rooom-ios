@@ -724,7 +724,7 @@ private final class RooomAdMessageHandler: NSObject, WKScriptMessageHandlerWithR
 final class RooomAdsBridgeViewController: CAPBridgeViewController {
     var monetization: RooomMonetization?
     var adReservationChanged: ((RooomAdInsets) -> Void)?
-    // Per-document presentation agreement; old/missing Web keeps legacy resize.
+    // Per-document presentation agreement; missing Web keeps full height and hides ads.
     private(set) var phoneOverlayDocument = UUID().uuidString
     private(set) var phoneOverlayRequested = false
     var phoneOverlayLayoutReady = false {
@@ -733,7 +733,8 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
     func installPhoneSurfaceSeed(_ config: RooomAdConfig) {
         guard UIDevice.current.userInterfaceIdiom == .phone, let content = bridge?.webView?.configuration.userContentController else { return }
         let source = RooomPhoneSurfaceBootstrap.script(config: config)
-        let old = content.userScripts
+        // Materialize a Swift array before mutating the WebKit-owned collection.
+        let old = content.userScripts.map { $0 }
         if old.contains(where: { $0.source == source }) { return }
         let seed = WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         // Replace only our seed, preserving all existing script content/order.

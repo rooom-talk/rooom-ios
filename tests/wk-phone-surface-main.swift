@@ -15,6 +15,12 @@ func sameScripts(_ actual: [WKUserScript], _ expected: [WKUserScript], _ label: 
     require(actual.count == expected.count, "\(label): script count")
     for index in actual.indices { require(actual[index] === expected[index], "\(label): script identity/order at \(index)") }
 }
+func traceScripts(_ scripts: [WKUserScript], _ label: String) {
+    trace("\(label): count=\(scripts.count)")
+    for (index, script) in scripts.enumerated() {
+        trace("\(label)[\(index)]: identity=\(ObjectIdentifier(script)); time=\(script.injectionTime == .atDocumentStart ? "start" : "end"); mainOnly=\(script.isForMainFrameOnly); source=\(String(script.source.prefix(160)).replacingOccurrences(of: "\n", with: "\\n"))")
+    }
+}
 func phoneConfig(_ format: RooomAdFormat = .banner, gap: CGFloat = 0, fixed: Bool = true) -> RooomAdConfig {
     RooomAdConfig(version: 1, enabled: true, fixed: fixed, archive: false,
         slots: [RooomAdSlot(key: "phone", role: "phone.bottom", device: "phone", format: format,
@@ -64,10 +70,26 @@ content.add(probe, name: "surfaceProbe")
 let first = WKUserScript(source: "window.__otherOrder=['first'];", injectionTime: .atDocumentStart, forMainFrameOnly: false)
 let second = WKUserScript(source: "window.__otherOrder.push('second');", injectionTime: .atDocumentEnd, forMainFrameOnly: false)
 let third = WKUserScript(source: "window.__otherOrder.push('third');", injectionTime: .atDocumentStart, forMainFrameOnly: true)
+// Record the actual OS bridge behavior separately from the product installer.
+// A Swift value backed by WebKit's NSMutableArray can observe removeAll; map
+// must materialize an independent array while retaining each script object.
+let snapshotProbe = WKUserContentController()
+snapshotProbe.addUserScript(first); snapshotProbe.addUserScript(second)
+let borrowedScripts = snapshotProbe.userScripts
+let copiedScripts = snapshotProbe.userScripts.map { $0 }
+traceScripts(borrowedScripts, "bridge probe before removal")
+snapshotProbe.removeAllUserScripts()
+traceScripts(borrowedScripts, "bridge probe borrowed after removal")
+traceScripts(copiedScripts, "bridge probe snapshot after removal")
+sameScripts(copiedScripts, [first, second], "materialized snapshot survives WebKit removeAll")
 content.addUserScript(first); content.addUserScript(second)
+traceScripts(content.userScripts, "before WK construction")
+sameScripts(content.userScripts, [first, second], "fixture scripts before WK construction")
 trace("before WKWebView construction")
 let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 390, height: 844), configuration: configuration)
 trace("after WKWebView construction")
+require(web.configuration.userContentController === content, "fixture and actual installer use the same content controller")
+sameScripts(content.userScripts, [first, second], "fixture scripts after WK construction")
 let navigationDelegate = SurfaceNavigation()
 web.navigationDelegate = navigationDelegate
 let controller = SurfaceController(web)
@@ -163,8 +185,10 @@ func navigate(_ url: String, page: String?, height: CGFloat, frames: Bool = fals
 // Actual installer, including idempotence and preserving the same objects in a
 // mixed injection-time list. The seed is deliberately not the last script.
 trace("before actual seed installer")
+traceScripts(content.userScripts, "before initial seed")
 controller.installPhoneSurfaceSeed(phoneConfig(.banner, gap: 10))
-trace("after actual seed installer; scriptCount=\(content.userScripts.count)")
+traceScripts(content.userScripts, "after initial seed")
+require(content.userScripts.count == 3, "initial installer must preserve both existing scripts and add exactly one seed")
 let originalSeed = content.userScripts[2]
 require(originalSeed.injectionTime == .atDocumentStart && originalSeed.isForMainFrameOnly, "actual seed injection boundary")
 content.addUserScript(third)
@@ -173,14 +197,20 @@ controller.installPhoneSurfaceSeed(phoneConfig(.banner, gap: 10))
 sameScripts(content.userScripts, [first, second, originalSeed, third], "same configuration is idempotent")
 navigate("https://rooom-talk.com/", page: "home", height: 60, frames: true)
 
+traceScripts(content.userScripts, "before OFF replacement")
 controller.installPhoneSurfaceSeed(.off)
+traceScripts(content.userScripts, "after OFF replacement")
+require(content.userScripts.count == 4, "OFF installer must preserve all three foreign scripts and replace exactly one seed")
 let disabledSeed = content.userScripts[2]
 require(disabledSeed !== originalSeed, "OFF replaces only the seed")
 sameScripts(content.userScripts, [first, second, disabledSeed, third], "OFF keeps foreign script identity/order")
 require(record(attributesExpression())["overlay"] as? String == "home", "next-document seed does not mutate the live Web owner's state")
 navigate("https://rooom-talk.com/room.html", page: "room", height: 0)
 
+traceScripts(content.userScripts, "before ON replacement")
 controller.installPhoneSurfaceSeed(phoneConfig(.largeBanner, gap: 3))
+traceScripts(content.userScripts, "after ON replacement")
+require(content.userScripts.count == 4, "ON installer must preserve all three foreign scripts and replace exactly one seed")
 let enabledSeed = content.userScripts[2]
 sameScripts(content.userScripts, [first, second, enabledSeed, third], "ON again preserves foreign scripts")
 navigate("https://rooom-talk.com/room.html", page: "room", height: 103)
@@ -192,7 +222,7 @@ controller.installPhoneSurfaceSeed(phoneConfig())
 navigate("https://example.com/room.html", page: nil, height: 0)
 navigate("https://rooom-talk.com/help.html", page: nil, height: 0)
 
-let beforeTablet = content.userScripts
+let beforeTablet = content.userScripts.map { $0 }
 UIDevice.current.userInterfaceIdiom = .pad
 controller.installPhoneSurfaceSeed(.off)
 sameScripts(content.userScripts, beforeTablet, "iPad never installs or replaces a phone seed")
