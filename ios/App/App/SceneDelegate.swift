@@ -142,7 +142,8 @@ final class RooomKeyboardContainerViewController: UIViewController {
             phoneOverlayRequest = key; phoneOverlayApplied = nil
             if enabled || hadRequest {
                 let payload: [String: Any] = ["version":1,"documentId":document,
-                    "enabled":enabled,"bottom":enabled ? Double(reserved) : 0]
+                    "enabled":enabled,"bottom":enabled ? Double(reserved) : 0,
+                    "viewportHeight":Double(view.bounds.height - lastKeyboardOverlap)]
                 if let data = try? JSONSerialization.data(withJSONObject: payload),
                    let json = String(data: data, encoding: .utf8) {
                     let script = "window.__rooomPhoneAdOverlay?.apply(\(json)) === true"
