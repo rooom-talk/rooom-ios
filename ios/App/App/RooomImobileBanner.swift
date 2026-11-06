@@ -702,6 +702,10 @@ private final class RooomAdMessageHandler: NSObject, WKScriptMessageHandlerWithR
 final class RooomAdsBridgeViewController: CAPBridgeViewController {
     var monetization: RooomMonetization?
     var adReservationChanged: ((RooomAdInsets) -> Void)?
+    // Per-document presentation agreement; old/missing Web keeps legacy resize.
+    private(set) var phoneOverlayDocument = UUID().uuidString
+    private(set) var phoneOverlayRequested = false
+    private var overlayNavigation: NSKeyValueObservation?
     private var adHandler: RooomAdMessageHandler?
     private var canvasBackground = RooomInitialCanvas.color
     private func applyCanvasBackground(_ color: UIColor) {
@@ -723,6 +727,14 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
         // for a document or an ad capability/configure reply to paint the canvas.
         applyCanvasBackground(canvasBackground)
         monetization = RooomMonetization(controller: self)
+        overlayNavigation = web.observe(\.isLoading, options: [.new]) { [weak self] web, _ in
+            guard let self else { return }
+            if web.isLoading {
+                self.phoneOverlayDocument = UUID().uuidString
+                self.phoneOverlayRequested = false
+            }
+            self.adReservationChanged?(self.monetization?.reservation ?? RooomAdInsets())
+        }
         let handler = RooomAdMessageHandler(self); adHandler = handler
         web.configuration.userContentController.addScriptMessageHandler(handler, contentWorld: .page, name: "rooomMonetization")
         // Same first-party Web module for TOP and direct room notification entry.
@@ -745,9 +757,16 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
         do {
             switch op {
             case "capabilities": reply(["version":1,"implemented":true,"platform":"ios","device":engine.device,
+                "phoneOverlay":["version":1,"documentId":phoneOverlayDocument],
                 "fixedLayoutReservation":"before-fill-v1",
                 "tabletPortraitWebBanner":"isolated-wkwebview-v1",
                 "formats":["banner","largeBanner","rectangle","tabletBanner","native"],"maxSlots":RooomAdPolicy.maxSlots],nil)
+            case "phoneOverlay":
+                guard engine.device == "phone", body["documentId"] as? String == phoneOverlayDocument,
+                      let enabled = body["enabled"] as? Bool else { throw RooomAdError.invalidRequest }
+                phoneOverlayRequested = enabled
+                adReservationChanged?(engine.reservation)
+                reply(["ok":true],nil)
             case "background":
                 // Appearance only: restricted to the existing trusted first-party
                 // main-frame handler. Reject malformed/oversized color data.

@@ -27,7 +27,7 @@ test('Web update validates before persisting, and unknown pages release geometry
 test('first UIKit layout is pre-sized and unchanged constraints do not loop',()=>{
  const early=scene.slice(scene.indexOf('override func viewWillLayoutSubviews'),scene.indexOf('override func viewSafeAreaInsetsDidChange'));
  assert.ok(early.indexOf('updateBridgeBottom()')<early.indexOf('super.viewWillLayoutSubviews()'));
- assert.match(scene,/bridgeBottomConstraint.constant != -\(lastKeyboardOverlap \+ reserved.bottom\)/);
+ assert.match(scene,/bridgeBottomConstraint.constant != -\(lastKeyboardOverlap \+ bottom\)/);
  assert.match(scene,/bridgeTrailingConstraint.constant != -reserved.right else \{ return \}/);
 });
 test('fresh-install seed stays data in the existing resource pipeline',()=>{

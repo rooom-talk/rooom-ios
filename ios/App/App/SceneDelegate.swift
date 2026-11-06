@@ -15,6 +15,8 @@ final class RooomKeyboardContainerViewController: UIViewController {
     private var bridgeLeadingConstraint: NSLayoutConstraint!
     private var bridgeTrailingConstraint: NSLayoutConstraint!
     private var lastKeyboardOverlap: CGFloat = 0
+    private var phoneOverlayRequest: String?
+    private var phoneOverlayApplied: String?
 #else
     private let bridgeViewController = CAPBridgeViewController()
 #endif
@@ -115,13 +117,46 @@ final class RooomKeyboardContainerViewController: UIViewController {
         guard bridgeBottomConstraint != nil, bridgeLeadingConstraint != nil,
               bridgeTrailingConstraint != nil else { return }
         let reserved = bridgeViewController.monetization?.reservation ?? RooomAdInsets()
-        guard bridgeBottomConstraint.constant != -(lastKeyboardOverlap + reserved.bottom) ||
+        let bottom = phonePresentationBottom(reserved.bottom)
+        guard bridgeBottomConstraint.constant != -(lastKeyboardOverlap + bottom) ||
               bridgeLeadingConstraint.constant != reserved.left ||
               bridgeTrailingConstraint.constant != -reserved.right else { return }
-        bridgeBottomConstraint.constant = -(lastKeyboardOverlap + reserved.bottom)
+        bridgeBottomConstraint.constant = -(lastKeyboardOverlap + bottom)
         bridgeLeadingConstraint.constant = reserved.left
         bridgeTrailingConstraint.constant = -reserved.right
         view.setNeedsLayout()
+    }
+    // Translate the existing reservation at the container boundary only. Ad
+    // fetching/show/failure, iPad geometry and the keyboard owner stay unchanged.
+    private func phonePresentationBottom(_ reserved: CGFloat) -> CGFloat {
+        guard UIDevice.current.userInterfaceIdiom == .phone,
+              let web = bridgeViewController.bridge?.webView else { return reserved }
+        let document = bridgeViewController.phoneOverlayDocument
+        let enabled = bridgeViewController.phoneOverlayRequested && !web.isLoading &&
+            RooomAdPolicy.advertisingPage(web.url)
+        // Include viewport changes: late Web replies from rotation/keyboard or
+        // the previous document must never expand a differently sized surface.
+        let key = "\(document):\(enabled):\(reserved):\(view.bounds.width):\(view.bounds.height):\(lastKeyboardOverlap)"
+        if phoneOverlayRequest != key {
+            let hadRequest = phoneOverlayRequest != nil
+            phoneOverlayRequest = key; phoneOverlayApplied = nil
+            if enabled || hadRequest {
+                let payload: [String: Any] = ["version":1,"documentId":document,
+                    "enabled":enabled,"bottom":enabled ? Double(reserved) : 0]
+                if let data = try? JSONSerialization.data(withJSONObject: payload),
+                   let json = String(data: data, encoding: .utf8) {
+                    let script = "window.__rooomPhoneAdOverlay?.apply(\(json)) === true"
+                    web.evaluateJavaScript(script) { [weak self] value, error in
+                        guard let self, error == nil, value as? Bool == true,
+                              self.phoneOverlayRequest == key,
+                              self.bridgeViewController.phoneOverlayDocument == document else { return }
+                        self.phoneOverlayApplied = key
+                        self.updateBridgeBottom()
+                    }
+                }
+            }
+        }
+        return enabled && phoneOverlayApplied == key ? 0 : reserved
     }
 #endif
     private func applyKeyboardFrame(_ notification: Notification) {
