@@ -159,4 +159,37 @@ check("iPad initial portrait reservation is stable through fill and rotation; ph
  let iphone=RooomAdPolicy.fixedLayout(config:c,device:"phone",bounds:CGSize(width:390,height:844),readyKeys:[],reserveTabletBottom:true)
  assert(iphone.reserved==RooomAdInsets())
 }
+check("isolated Web banner reserves exactly 728x90 plus safe area without an SDK bottom") {
+ var c=RooomAdConfig(version:1,enabled:true,fixed:true,archive:false,slots:[left,lower])
+ c.tabletPortraitWebBanner=RooomTabletWebBanner(version:1,url:RooomTabletWebBanner.approvedURL)
+ _ = try c.validated()
+ let p=RooomAdPolicy.fixedLayout(config:c,device:"tablet",bounds:CGSize(width:820,height:1180),safe:RooomAdInsets(bottom:20),readyKeys:[])
+ assert(p.placements.isEmpty && p.reserved.bottom==110 && p.reserved.left==0)
+ assert(p.webBannerRect == CGRect(x:46,y:1070,width:728,height:90))
+ let wide=RooomAdPolicy.fixedLayout(config:c,device:"tablet",bounds:CGSize(width:1180,height:820))
+ assert(wide.placements.count==2 && wide.webBannerRect==nil && wide.reserved.left==316 && wide.reserved.bottom==0)
+ for width in [CGFloat(600),727] {
+  let compact=RooomAdPolicy.fixedLayout(config:c,device:"tablet",bounds:CGSize(width:width,height:1024))
+  assert(compact.webBannerRect==nil && compact.reserved==RooomAdInsets() && compact.placements.isEmpty)
+ }
+ let keyboard=RooomAdPolicy.fixedLayout(config:c,device:"tablet",bounds:CGSize(width:820,height:1180),keyboard:true)
+ assert(keyboard.webBannerRect==nil && keyboard.reserved==RooomAdInsets())
+ let phone=RooomAdPolicy.fixedLayout(config:c,device:"phone",bounds:CGSize(width:820,height:1180))
+ assert(phone.webBannerRect==nil && phone.reserved==RooomAdInsets())
+ let data=try JSONEncoder().encode(c)
+ assert(RooomInitialAdLayout.decode(data)==c)
+ let offData=try JSONEncoder().encode(RooomAdConfig.off)
+ assert(RooomInitialAdLayout.restore(cached:offData,bundled:data) == .off)
+}
+check("Web surface rejects untrusted URLs and dual SDK/Web bottom reservations") {
+ for url in ["https://rooom-test2.web.app/ad.html", "https://example.com", RooomTabletWebBanner.approvedURL+"?x=1"] {
+  var c=RooomAdConfig(version:1,enabled:true,fixed:true,archive:false,slots:[left,lower])
+  c.tabletPortraitWebBanner=RooomTabletWebBanner(version:1,url:url)
+  do { _ = try c.validated(); fatalError("bad URL accepted") } catch {}
+ }
+ var c=config
+ c.tabletPortraitWebBanner=RooomTabletWebBanner(version:1,url:RooomTabletWebBanner.approvedURL)
+ do { _ = try c.validated(); fatalError("dual bottom accepted") } catch {}
+ c.slots.forEach { assert($0.mediaId != "597834") }
+}
 print("ALL \(count) POLICY TESTS PASSED; UIKit/SDK runtime NOT tested")

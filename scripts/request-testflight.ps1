@@ -55,11 +55,18 @@ $webChecks=@{
     'native-ipad-portrait-blank.mjs'="reply.fixedLayoutReservation==='before-fill-v1'"
     'native-ad-adapter.mjs'='export async function syncNativeInitialLayoutOff'
     'page-ad-runtime.mjs'='syncNativeInitialLayoutOff(globalThis,monetizationConfig)'
+    'ad-contract.mjs'=@('Invalid isolated iPad Web banner','https://rooom-talk.com/src/features/ads/ios-ipad-portrait-728.html')
+    'verified-app-spots.mjs'='...(tabletPortraitWebBanner !== undefined'
+    'monetization-config.mjs'=@('tabletPortraitBottom:false','tabletPortraitWebBanner:{version:1,url:IPAD_WEB_BANNER_URL}')
+    'ios-ipad-portrait-728.html'=@('RoooMAdSurface/1','asid:1951545')
 }
 foreach($file in $webChecks.Keys) {
     $webHelper = Invoke-WebRequest -UseBasicParsing -Uri ('https://rooom-talk.com/src/features/ads/'+$file) -Headers @{'Cache-Control'='no-cache'}
-    if ($webHelper.StatusCode -ne 200 -or !$webHelper.Content.Contains($webChecks[$file])) {
+    if ($webHelper.StatusCode -ne 200) {
         throw ('Deploy the compatible Web layout helpers before requesting upload: '+$file)
+    }
+    foreach ($signature in @($webChecks[$file])) {
+        if (!$webHelper.Content.Contains($signature)) { throw ('Deploy the iPad 728 Web assets before requesting upload: '+$file) }
     }
 }
 Write-Host ('Verified merged candidate '+$ApprovedSha+'; app com.rooom.talk; iOS 1.6; generation 3.')

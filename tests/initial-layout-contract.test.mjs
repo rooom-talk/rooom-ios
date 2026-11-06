@@ -27,9 +27,9 @@ test('first UIKit layout is pre-sized and unchanged constraints do not loop',()=
 test('fresh-install seed stays data in the existing resource pipeline',()=>{
  const seed=JSON.parse(fs.readFileSync('public/rooom-initial-ad-layout.json','utf8'));
  assert.equal(seed.version,1);assert.equal(seed.enabled,true);
- assert.deepEqual(seed.slots.map(x=>x.role),['tablet.left.top','tablet.left.bottom','tablet.bottom']);
+ assert.deepEqual(seed.slots.map(x=>x.role),['tablet.left.top','tablet.left.bottom']);
  assert.equal(seed.presentation.railSide,'left');assert.equal(seed.presentation.railWidth,316);
- assert.equal(seed.slots.at(-1).format,'banner');
+ assert.equal(seed.tabletPortraitWebBanner.url,'https://rooom-talk.com/src/features/ads/ios-ipad-portrait-728.html');
  assert.match(swift,/subdirectory: "public"/);
  assert.match(fs.readFileSync('scripts/stage-imobile-official-sdk.mjs','utf8'),/Initial Web-owned layout seed was not copied/);
 });

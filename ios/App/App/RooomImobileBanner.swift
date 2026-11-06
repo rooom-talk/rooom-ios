@@ -43,16 +43,30 @@ struct RooomAdPresentation: Codable, Equatable {
         return self
     }
 }
+struct RooomTabletWebBanner: Codable, Equatable {
+    let version: Int
+    let url: String
+    static let approvedURL = "https://rooom-talk.com/src/features/ads/ios-ipad-portrait-728.html"
+    func validated() throws -> RooomTabletWebBanner {
+        guard version == 1, url == Self.approvedURL else { throw RooomAdError.invalidConfig }
+        return self
+    }
+}
 struct RooomAdConfig: Codable, Equatable {
     let version: Int, enabled: Bool, fixed: Bool, archive: Bool
     let slots: [RooomAdSlot]
     var presentation: RooomAdPresentation? = nil
+    var tabletPortraitWebBanner: RooomTabletWebBanner? = nil
     static let off = RooomAdConfig(version: 1, enabled: false, fixed: false, archive: false, slots: [])
     func validated() throws -> RooomAdConfig {
         guard version == 1 else { throw RooomAdError.invalidConfig }
         if !enabled { return .off }
         guard slots.count <= 20 else { throw RooomAdError.limit }
         _ = try presentation?.validated()
+        if let webBanner = tabletPortraitWebBanner {
+            _ = try webBanner.validated()
+            guard fixed, !slots.contains(where: { $0.role == "tablet.bottom" }) else { throw RooomAdError.invalidConfig }
+        }
         var keys = Set<String>(), spots = Set<String>()
         for s in slots {
             guard RooomAdPolicy.validKey(s.key), keys.insert(s.key).inserted,
@@ -80,6 +94,7 @@ struct RooomAdInsets: Equatable {
 struct RooomFixedPlacement: Equatable { let slot: RooomAdSlot; let rect: CGRect }
 struct RooomAdLayout: Equatable {
     var placements: [RooomFixedPlacement] = []
+    var webBannerRect: CGRect? = nil
     var reserved = RooomAdInsets()
 }
 enum RooomAdPolicy {
@@ -112,6 +127,13 @@ enum RooomAdPolicy {
         // Landscape is LEFT rail only: never fall back to the portrait banner.
         let look = config.presentation ?? .standard
         let landscapeTablet = device == "tablet" && bounds.width > bounds.height
+        if device == "tablet", !landscapeTablet, config.tabletPortraitWebBanner != nil,
+           bounds.width - safe.left - safe.right >= 728,
+           bounds.height - safe.top - safe.bottom - look.bottomGap >= 90 {
+            out.webBannerRect = CGRect(x: safe.left + (bounds.width - safe.left - safe.right - 728) / 2,
+                y: bounds.height - safe.bottom - 90 - look.bottomGap, width: 728, height: 90)
+            out.reserved.bottom = 90 + safe.bottom + look.bottomGap
+        }
         let roles = device == "phone" ? ["phone.bottom"] : landscapeTablet
             ? ["tablet.left.top", "tablet.left.bottom"] : ["tablet.bottom"]
         for role in roles {
@@ -233,6 +255,66 @@ import UIKit
 import WebKit
 import Capacitor
 
+// The publisher's Web 728x90 tag has no APP SDK spot. Keep its scripts outside
+// the authenticated Capacitor WebView: no handlers, injected app scripts, app
+// cookies, main-page DOM or permission bridge exist on this dedicated surface.
+private final class RooomTabletWebAd: NSObject, WKNavigationDelegate, WKUIDelegate {
+    let view: WKWebView
+    private(set) var phase = "created"
+    init(url: URL) {
+        let settings = WKWebViewConfiguration()
+        settings.websiteDataStore = .nonPersistent()
+        settings.userContentController = WKUserContentController()
+        settings.applicationNameForUserAgent = "RoooMAdSurface/1"
+        settings.preferences.javaScriptCanOpenWindowsAutomatically = false
+        view = WKWebView(frame: CGRect(x: 0, y: 0, width: 728, height: 90), configuration: settings)
+        super.init()
+        view.navigationDelegate = self; view.uiDelegate = self
+        view.isOpaque = false; view.backgroundColor = .clear
+        view.scrollView.isScrollEnabled = false
+        view.scrollView.contentInsetAdjustmentBehavior = .never
+        view.scrollView.bounces = false
+        phase = "loading-document"
+        view.load(URLRequest(url: url))
+    }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        phase = "document-loaded" // Never equate this with an ad impression.
+        inspect()
+    }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { phase = "document-failed" }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { phase = "document-failed" }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { phase = "content-process-ended" }
+    private func open(_ url: URL?) {
+        guard let url, ["https", "http"].contains(url.scheme ?? ""),
+              UIApplication.shared.applicationState == .active else { return }
+        UIApplication.shared.open(url, options: [:], completionHandler: nil)
+    }
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // Provider subframes stay in the isolated surface. Only our exact page
+        // may replace its main frame. User links open via the existing OS path.
+        if navigationAction.targetFrame?.isMainFrame == false { decisionHandler(.allow); return }
+        if navigationAction.request.url?.absoluteString == RooomTabletWebBanner.approvedURL {
+            decisionHandler(.allow); return
+        }
+        if navigationAction.navigationType == .linkActivated { open(navigationAction.request.url) }
+        decisionHandler(.cancel)
+    }
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        // WebKit blocks automatic popups above; preserve genuine user clicks.
+        open(navigationAction.request.url); return nil
+    }
+    func inspect() {
+        view.evaluateJavaScript("document.documentElement.dataset.adPhase || 'document-loaded'") { [weak self] value, _ in
+            guard let self, let value = value as? String,
+                  ["tag-started", "loader-loaded", "loader-failed", "document-loaded"].contains(value) else { return }
+            self.phase = value
+        }
+    }
+    func release() { view.stopLoading(); view.navigationDelegate = nil; view.uiDelegate = nil; view.removeFromSuperview() }
+}
+
 // SDK-owned native object: NO HTML asset copying, custom click forwarding or fake impressions.
 private final class RooomNativeCreativeView: UIView {
     let image = UIImageView(), title = UILabel(), detail = UILabel(), sponsor = UILabel(), badge = UILabel()
@@ -288,6 +370,8 @@ private final class RooomSdkSlot: NSObject, IMobileSdkAdsDelegate {
     var ready = false, failed = false, released = false, shown = false, nativeRequested = false
     // Read-only status for TestFlight triage; no SDK behavior or retries change.
     private(set) var diagnosticPhase = "created"
+    private(set) var lastFailureCode: Int? = nil
+    private(set) var displayCallbackReceived = false
     weak var owner: RooomMonetization?
     private var nativeObject: ImobileSdkAdsNativeObject?
     private var creative: RooomNativeCreativeView?
@@ -306,26 +390,35 @@ private final class RooomSdkSlot: NSObject, IMobileSdkAdsDelegate {
             guard ImobileSdkAds.register(withPublisherID: slot.publisherId, mediaID: slot.mediaId, spotID: slot.spotId) else { fail("register-rejected"); return }
             Self.registered[slot.spotId] = slot
         }
-        ImobileSdkAds.setSpotDelegate(slot.spotId, delegate: self)
+        guard ImobileSdkAds.setSpotDelegate(slot.spotId, delegate: self) else { fail("delegate-rejected"); return }
         diagnosticPhase = "starting"
         if !ImobileSdkAds.start(bySpotID: slot.spotId) { fail("start-rejected") }
         else { diagnosticPhase = "awaiting-callback" }
     }
-    func showBannerIfNeeded() {
-        guard ready, !failed, !released, !shown, slot.format != .native, !view.isHidden else { return }
+    func showBannerIfNeeded(allowPending: Bool = false) {
+        // Official 2.3.4 inline sample attaches the View and calls show after
+        // start, without waiting for Ready. Only the iPad fixed rollout uses
+        // that path; iPhone and native-feed behavior keep their existing gate.
+        guard (ready || allowPending), !failed, !released, !shown,
+              slot.format != .native, !view.isHidden, view.window != nil else { return }
         shown = true
         if !ImobileSdkAds.show(bySpotID: slot.spotId, view: view) { fail("show-rejected") }
         else { diagnosticPhase = "show-accepted" }
     }
     private func fail(_ phase: String = "sdk-failed-callback") {
         guard !released else { return }
-        diagnosticPhase = phase; failed = true; ready = false; view.isHidden = true
+        diagnosticPhase = phase; failed = true; ready = false; shown = false
+        displayCallbackReceived = false; view.isHidden = true
         owner?.slotChanged(self, status: "failed")
     }
     func imobileSdkAdsSpot(_ spotId: String!, didReadyWithValue value: ImobileSdkAdsReadyResult) {
         guard spotId == slot.spotId else { return }
         DispatchQueue.main.async { [weak self] in
-            guard let self, !self.released, !self.failed else { return }
+            guard let self, !self.released else { return }
+            // The SDK owns retry timing. A later Ready after a transient failure
+            // must restore this slot; never start an application retry loop.
+            if self.slot.device == "tablet", self.slot.format != .native { self.failed = false }
+            guard !self.failed else { return }
             if self.slot.format == .native {
                 guard !self.nativeRequested, let controller = self.owner?.controller else { return }
                 self.nativeRequested = true
@@ -338,7 +431,17 @@ private final class RooomSdkSlot: NSObject, IMobileSdkAdsDelegate {
     }
     func imobileSdkAdsSpot(_ spotId: String!, didFailWithValue value: ImobileSdkAdsFailResult) {
         guard spotId == slot.spotId else { return }
-        DispatchQueue.main.async { [weak self] in self?.fail() }
+        DispatchQueue.main.async { [weak self] in
+            self?.lastFailureCode = Int(value.rawValue)
+            self?.fail()
+        }
+    }
+    func imobileSdkAdsSpotDidShow(_ spotId: String!) {
+        guard spotId == slot.spotId else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.released else { return }
+            self.displayCallbackReceived = true; self.diagnosticPhase = "display-callback"
+        }
     }
     func onNativeAdDataReciveCompleted(_ spotId: String!, nativeArray: [AnyObject]!) {
         guard spotId == slot.spotId else { return }
@@ -373,6 +476,7 @@ final class RooomMonetization {
     private var config = RooomAdConfig.off
     private var initialLayout: RooomAdConfig
     private var entries: [String: RooomSdkSlot] = [:]
+    private var tabletWebAd: RooomTabletWebAd?
     private var keyboard = false, layingOut = false
     private var observers: [NSObjectProtocol] = []
     private var navigation: NSKeyValueObservation?
@@ -410,6 +514,7 @@ final class RooomMonetization {
         releaseCreatives(); config = valid; layout()
     }
     private func releaseCreatives() {
+        tabletWebAd?.release(); tabletWebAd = nil
         let old = entries; entries.removeAll(); for entry in old.values { entry.release() }
     }
     private func beginDocument() {
@@ -425,6 +530,7 @@ final class RooomMonetization {
     func setKeyboardVisible(_ value: Bool) { keyboard = value; if value { hideFeed() }; layout() }
     func hideFeed() { for e in entries.values where e.slot.format == .native { e.view.isHidden = true } }
     private func hideAll() {
+        tabletWebAd?.release(); tabletWebAd = nil
         for e in entries.values { e.view.isHidden = true }
         if device != "tablet" { setReservation(RooomAdInsets()) }
     }
@@ -448,12 +554,28 @@ final class RooomMonetization {
                     "eligible": selectedKeys.contains(slot.key),
                     "ready": entry?.ready ?? false,
                     "failed": entry?.failed ?? false,
-                    "shown": entry?.shown ?? false]
+                    "shown": entry?.shown ?? false,
+                    "displayCallback": entry?.displayCallbackReceived ?? false,
+                    "failureCode": entry?.lastFailureCode ?? -1,
+                    "sdkStatus": entry == nil ? -1 : Int(ImobileSdkAds.getStatusBySpotID(slot.spotId).rawValue),
+                    "readySelector": entry?.responds(to: NSSelectorFromString("imobileSdkAdsSpot:didReadyWithValue:")) ?? false,
+                    "failSelector": entry?.responds(to: NSSelectorFromString("imobileSdkAdsSpot:didFailWithValue:")) ?? false,
+                    "viewAttached": entry?.view.window != nil,
+                    "viewHidden": entry?.view.isHidden ?? true]
         }
+        tabletWebAd?.inspect()
         return ["version": 1, "device": device, "configured": config.enabled && config.fixed,
+                "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
+                "sdkVersion": ImobileSdkAds.getSdkVersion() ?? "unknown",
                 "pageEligible": safePage, "shellReady": shell != nil, "validBounds": validBounds,
                 "appActive": appActive, "keyboard": keyboard,
                 "orientation": dimensions.width > dimensions.height ? "landscape" : "portrait",
+                "width": dimensions.width, "height": dimensions.height,
+                "web728": ["configured": config.tabletPortraitWebBanner != nil,
+                    "eligible": layout.webBannerRect != nil,
+                    "phase": tabletWebAd?.phase ?? "not-created",
+                    "viewAttached": tabletWebAd?.view.window != nil,
+                    "viewHidden": tabletWebAd?.view.isHidden ?? true],
                 "slots": slots]
     }
     private func entry(_ slot: RooomAdSlot) throws -> RooomSdkSlot {
@@ -479,14 +601,28 @@ final class RooomMonetization {
             safe: safe, keyboard: keyboard, readyKeys: ready, reserveTabletBottom: device == "tablet").reserved)
         guard UIApplication.shared.applicationState == .active else { hideAll(); return }
         let desired = RooomAdPolicy.fixedLayout(config: config, device: device, bounds: shell.bounds.size, safe: safe, keyboard: keyboard)
+        tabletWebAd?.view.isHidden = true
+        if let rect = desired.webBannerRect, let banner = config.tabletPortraitWebBanner,
+           let url = URL(string: banner.url) {
+            if tabletWebAd == nil { tabletWebAd = RooomTabletWebAd(url: url) }
+            if let ad = tabletWebAd {
+                if ad.view.superview !== shell { shell.addSubview(ad.view) }
+                ad.view.frame = rect; ad.view.isHidden = false
+            }
+        } else {
+            // Hiding WKWebView alone does not suspend provider JavaScript.
+            // End this surface on rotation, keyboard, split view or OFF; create
+            // one new surface only when a user returns to an eligible posture.
+            tabletWebAd?.release(); tabletWebAd = nil
+        }
         let desiredKeys = Set(desired.placements.map { $0.slot.key })
         for e in entries.values where e.slot.format != .native && !desiredKeys.contains(e.slot.key) { e.view.isHidden = true }
         for p in desired.placements {
             guard let e = try? entry(p.slot) else { continue }
             if e.view.superview !== shell { shell.addSubview(e.view) }
-            e.view.frame = p.rect; e.view.isHidden = !e.ready || e.failed
+            e.view.frame = p.rect; e.view.isHidden = (device != "tablet" && !e.ready) || e.failed
         }
-        for p in desired.placements { entries[p.slot.key]?.showBannerIfNeeded() }
+        for p in desired.placements { entries[p.slot.key]?.showBannerIfNeeded(allowPending: device == "tablet") }
     }
     fileprivate func slotChanged(_ entry: RooomSdkSlot, status: String) {
         guard entries[entry.slot.key] === entry else { return }
@@ -600,6 +736,7 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
             switch op {
             case "capabilities": reply(["version":1,"implemented":true,"platform":"ios","device":engine.device,
                 "fixedLayoutReservation":"before-fill-v1",
+                "tabletPortraitWebBanner":"isolated-wkwebview-v1",
                 "formats":["banner","largeBanner","rectangle","tabletBanner","native"],"maxSlots":RooomAdPolicy.maxSlots],nil)
             case "background":
                 // Appearance only: restricted to the existing trusted first-party
