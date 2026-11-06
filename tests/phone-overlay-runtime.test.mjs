@@ -19,6 +19,7 @@ function method(marker){
 const bodies=[method('private func updateBridgeBottom()'),method('private func phonePresentationBottom(')];
 const program=String.raw`
 import Foundation
+import CoreGraphics
 enum Idiom { case phone, pad }
 final class UIDevice { static let current=UIDevice(); var userInterfaceIdiom=Idiom.phone }
 struct Insets { var bottom:CGFloat=0, left:CGFloat=0, right:CGFloat=0 }
