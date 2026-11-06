@@ -39,7 +39,7 @@ const slotMethods=['func start()', 'func showBannerIfNeeded(', 'private func fai
  'func imobileSdkAdsSpotDidShow(', 'func release()', 'deinit'];
 const ownerMethods=['func configure(', 'private func releaseCreatives()', 'private func beginDocument()',
  'func clear()', 'private func setReservation(', 'func setKeyboardVisible(', 'func hideFeed()',
- 'private func hideAll()', 'private func entry(', 'func layout()', 'fileprivate func slotChanged('];
+ 'private func hideAll()', 'private func entry(', 'private func phoneReservedInsets(', 'func layout()', 'fileprivate func slotChanged('];
 const foundation=source.split('#if ROOOM_IMOBILE_ADS')[0];
 
 const doubles=String.raw`
@@ -151,6 +151,8 @@ private final class RooomMonetization {
         shell!.safeAreaInsets = RooomAdInsets(bottom: 34)
         if attached { shell!.attachedWindow = UIWindow() }
     }
+    func testSeed(_ seed: RooomAdConfig) { initialLayout = seed }
+    func testBeginDocument() { beginDocument() }
     func testEntry(_ key: String = "phone") -> RooomSdkSlot { entries[key]! }
     func testNavigate(_ url: String, config: RooomAdConfig) throws {
         beginDocument(); web!.url = URL(string: url); try configure(config)
@@ -189,6 +191,37 @@ try runCase("100069 SDK_READY without Ready callback reproduces zero show") {
     owner.clear()
 }
 ` : String.raw`
+try runCase("cold start reserves verified geometry before configuration without SDK calls") {
+    let owner = RooomMonetization(); owner.testSeed(config)
+    owner.web!.url = nil
+    owner.layout()
+    require(owner.reservation.bottom == 84 && ImobileSdkAds.calls.isEmpty, "pre-document reserve without SDK")
+    owner.web!.url = URL(string: "https://rooom-talk.com/")
+    owner.layout(); owner.layout()
+    require(owner.reservation.bottom == 84 && ImobileSdkAds.calls.isEmpty, "delayed Web keeps initial geometry")
+    try owner.configure(config)
+    require(owner.reservation.bottom == 84 && count("show:") == 1, "configuration does not move footer")
+    owner.testEntry().imobileSdkAdsSpot(phone.spotId, didReadyWithValue: .ready); DispatchQueue.main.drain()
+    owner.layout(); require(owner.reservation.bottom == 84 && count("show:") == 1, "Ready and repeated layout stable")
+    owner.testBeginDocument()
+    require(owner.reservation.bottom == 84, "new document preserves verified layout before config")
+    try owner.configure(.off)
+    require(owner.reservation.bottom == 0, "explicit Web OFF remains authoritative")
+    owner.layout(); require(owner.reservation.bottom == 0, "OFF does not restore old seed")
+    owner.clear()
+}
+try runCase("invalid size external page and keyboard never keep initial phone space") {
+    let owner = RooomMonetization(); owner.testSeed(config)
+    owner.setKeyboardVisible(true)
+    require(owner.reservation.bottom == 0 && ImobileSdkAds.calls.isEmpty, "initial keyboard no request or space")
+    owner.setKeyboardVisible(false); require(owner.reservation.bottom == 84, "keyboard close restores initial geometry")
+    owner.web!.url = URL(string: "https://example.com/"); owner.layout()
+    require(owner.reservation.bottom == 0, "external page excludes seed")
+    owner.web!.url = URL(string: "https://rooom-talk.com/")
+    owner.shell!.frame.size.width = 300; owner.layout()
+    require(owner.reservation.bottom == 0, "banner too wide")
+    owner.clear()
+}
 try runCase("SDK_READY without callback shows once on a framed attached view") {
     let owner = RooomMonetization(); try owner.configure(config)
     let entry = owner.testEntry()
@@ -256,7 +289,7 @@ try runCase("TOP to ROOM uses cached registration with new delegate and new view
 }
 try runCase("unattached shell waits; attaching shows once; initial keyboard makes no request") {
     let owner = RooomMonetization(attached: false); try owner.configure(config)
-    require(count("show:") == 0 && owner.reservation.bottom == 0, "no show before window attachment")
+    require(count("show:") == 0 && owner.reservation.bottom == 84, "pending geometry before window attachment; no show")
     owner.shell!.attachedWindow = UIWindow(); owner.layout()
     require(count("show:") == 1 && owner.reservation.bottom == 84, "attached shell resumes")
     owner.clear()
