@@ -11,11 +11,10 @@ test('initial geometry never grants permission to start SDK requests',()=>{
  assert.match(swift,/setReservation\(RooomAdPolicy.fixedLayout\(config: initialLayout,/);
  assert.match(swift,/let desired = RooomAdPolicy.fixedLayout\(config: config,/);
  assert.ok(swift.indexOf('setReservation(RooomAdPolicy.fixedLayout(config: initialLayout')<swift.indexOf('let desired = RooomAdPolicy.fixedLayout(config: config'));
- const phone=swift.slice(swift.indexOf('if device == "phone" {',swift.indexOf('func layout()')),
-   swift.indexOf('fileprivate func slotChanged'));
- assert.match(phone,/\$0\.shown && !\$0\.failed && !\$0\.released/);
- assert.match(phone,/fixedLayout\(config: config,/);
- assert.doesNotMatch(phone,/initialLayout/);
+ const phone=swift.slice(swift.indexOf('private func phoneReservedInsets'),swift.indexOf('func layout()'));
+ assert.match(phone,/!entry.failed && !entry.released/);
+ assert.match(phone,/fixedLayout\(config: initialLayout,/);
+ assert.doesNotMatch(phone,/entry\(|showBanner|start\(/);
 });
 test('Web update validates before persisting, and unknown pages release geometry',()=>{
  const configure=swift.slice(swift.indexOf('func configure('),swift.indexOf('private func releaseCreatives'));
@@ -33,7 +32,7 @@ test('first UIKit layout is pre-sized and unchanged constraints do not loop',()=
 test('fresh-install seed stays data in the existing resource pipeline',()=>{
  const seed=JSON.parse(fs.readFileSync('public/rooom-initial-ad-layout.json','utf8'));
  assert.equal(seed.version,1);assert.equal(seed.enabled,true);
- assert.deepEqual(seed.slots.map(x=>x.role),['tablet.left.top','tablet.left.bottom']);
+ assert.deepEqual(seed.slots.map(x=>x.role),['phone.bottom','tablet.left.top','tablet.left.bottom']);
  assert.equal(seed.presentation.railSide,'left');assert.equal(seed.presentation.railWidth,316);
  assert.equal(seed.tabletPortraitWebBanner.url,'https://rooom-talk.com/src/features/ads/ios-ipad-portrait-728.html');
  assert.match(swift,/subdirectory: "public"/);

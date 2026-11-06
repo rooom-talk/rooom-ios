@@ -5,6 +5,15 @@
   "archive": false,
   "slots": [
     {
+      "key": "ios.phone.bottom",
+      "role": "phone.bottom",
+      "device": "phone",
+      "format": "banner",
+      "publisherId": "85650",
+      "mediaId": "597836",
+      "spotId": "1951334"
+    },
+    {
       "key": "ios.tablet.left.upper",
       "role": "tablet.left.top",
       "device": "tablet",
