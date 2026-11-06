@@ -4,8 +4,12 @@
 import Cocoa
 import WebKit
 
+func trace(_ message: String) {
+    // A signal can bypass normal process termination and buffered stdout.
+    FileHandle.standardError.write(Data("PHONE SURFACE STAGE: \(message)\n".utf8))
+}
 func require(_ condition: @autoclosure () -> Bool, _ message: String) {
-    if !condition() { fputs("PHONE SURFACE FAILURE: \(message)\n", stderr); exit(1) }
+    if !condition() { trace("FAILURE: \(message)"); exit(1) }
 }
 func sameScripts(_ actual: [WKUserScript], _ expected: [WKUserScript], _ label: String) {
     require(actual.count == expected.count, "\(label): script count")
@@ -26,8 +30,32 @@ final class SurfaceProbe: NSObject, WKScriptMessageHandler {
         frames.append(body)
     }
 }
+final class SurfaceNavigation: NSObject, WKNavigationDelegate {
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { trace("WK navigation finished") }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        require(false, "WK navigation failed: \(error)")
+    }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        require(false, "WK provisional navigation failed: \(error)")
+    }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        require(false, "WK content subprocess terminated")
+    }
+}
 
+trace("process entry; mainThread=\(Thread.isMainThread); pid=\(ProcessInfo.processInfo.processIdentifier)")
+NSSetUncaughtExceptionHandler { exception in
+    trace("uncaught ObjC exception: \(exception.name.rawValue): \(exception.reason ?? "no reason")\n\(exception.callStackSymbols.joined(separator: "\n"))")
+}
+require(Thread.isMainThread, "AppKit/WK must execute on the process main thread")
+trace("before NSApplication.shared")
 let application = NSApplication.shared
+trace("after NSApplication.shared")
+_ = application.setActivationPolicy(.accessory)
+// This executable manually pumps RunLoop instead of calling application.run().
+// Complete the AppKit launch phase that run() normally performs first.
+application.finishLaunching()
+trace("AppKit launch complete")
 let configuration = WKWebViewConfiguration()
 configuration.websiteDataStore = .nonPersistent()
 let content = configuration.userContentController
@@ -37,10 +65,16 @@ let first = WKUserScript(source: "window.__otherOrder=['first'];", injectionTime
 let second = WKUserScript(source: "window.__otherOrder.push('second');", injectionTime: .atDocumentEnd, forMainFrameOnly: false)
 let third = WKUserScript(source: "window.__otherOrder.push('third');", injectionTime: .atDocumentStart, forMainFrameOnly: true)
 content.addUserScript(first); content.addUserScript(second)
+trace("before WKWebView construction")
 let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 390, height: 844), configuration: configuration)
+trace("after WKWebView construction")
+let navigationDelegate = SurfaceNavigation()
+web.navigationDelegate = navigationDelegate
 let controller = SurfaceController(web)
+trace("before NSWindow construction")
 let window = NSWindow(contentRect: web.frame, styleMask: [.titled], backing: .buffered, defer: false)
 window.contentView = web; window.orderFront(nil)
+trace("window attached")
 
 func evaluate(_ expression: String) -> Any? {
     var done = false, value: Any?, failure: Error?
@@ -69,6 +103,7 @@ var navigation = 0
 func navigate(_ url: String, page: String?, height: CGFloat, frames: Bool = false) {
     navigation += 1
     let run = navigation
+    trace("navigation \(run) start: \(url); expected page=\(page ?? "none"), height=\(height), frames=\(frames)")
     let snapshot = attributesExpression()
     func frameHTML(_ name: String) -> String {
         "<!doctype html><html><head><script>window.webkit.messageHandlers.surfaceProbe.postMessage(Object.assign({run:\(run),name:'\(name)',origin:location.origin},\(snapshot)));</script></head><body>frame</body></html>"
@@ -95,6 +130,7 @@ func navigate(_ url: String, page: String?, height: CGFloat, frames: Bool = fals
     }
     require(ready, "document \(run) did not finish delayed CSS")
     let initial = record("window.__firstSurface")
+    trace("navigation \(run) earliest-head state: \(initial)")
     require(initial["css"] as? Bool == false, "seed must precede CSS arrival")
     require(initial["order"] as? [String] == ["first", "third"], "unrelated documentStart scripts execute in original order")
     let current = record(snapshot)
@@ -121,11 +157,14 @@ func navigate(_ url: String, page: String?, height: CGFloat, frames: Bool = fals
         }
         require(frameRecords.first(where: { $0["name"] as? String == "opaque-external" })?["origin"] as? String == "null", "external data iframe has opaque origin")
     }
+    trace("navigation \(run) PASS")
 }
 
 // Actual installer, including idempotence and preserving the same objects in a
 // mixed injection-time list. The seed is deliberately not the last script.
+trace("before actual seed installer")
 controller.installPhoneSurfaceSeed(phoneConfig(.banner, gap: 10))
+trace("after actual seed installer; scriptCount=\(content.userScripts.count)")
 let originalSeed = content.userScripts[2]
 require(originalSeed.injectionTime == .atDocumentStart && originalSeed.isForMainFrameOnly, "actual seed injection boundary")
 content.addUserScript(third)
@@ -157,5 +196,6 @@ let beforeTablet = content.userScripts
 UIDevice.current.userInterfaceIdiom = .pad
 controller.installPhoneSurfaceSeed(.off)
 sameScripts(content.userScripts, beforeTablet, "iPad never installs or replaces a phone seed")
+trace("all assertions PASS")
 print("PHONE FULL CANVAS REAL WK PASS: earliest head state, delayed CSS, actual config validation, ON/OFF/navigation, foreign script identity/order, external origin and two child frames; no network/SDK")
 exit(0)

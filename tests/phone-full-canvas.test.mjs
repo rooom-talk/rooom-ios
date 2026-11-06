@@ -118,10 +118,19 @@ test('actual Swift enum and installer: WK documentStart, delayed CSS, ON/OFF, na
   try {
     const input = path.join(directory, 'main.swift'), executable = path.join(directory, 'phone-surface');
     fs.writeFileSync(input, program);
-    for (const [command, args] of [['swiftc', [input, '-o', executable]], [executable, []]]) {
+    for (const [label, command, args] of [['compile', 'swiftc', [input, '-o', executable]], ['real-wk', executable, []]]) {
+      const started = Date.now();
+      console.log(`PHONE SURFACE ${label} START ${JSON.stringify({ command, args, platform: process.platform, arch: process.arch })}`);
       const result = cp.spawnSync(command, args, { encoding: 'utf8', timeout: 60000, maxBuffer: 1024 * 1024 });
-      assert.equal(result.status, 0, `${result.error || ''}\n${result.stdout || ''}\n${result.stderr || ''}`);
+      const diagnostic = {
+        label, command, args, pid: result.pid, status: result.status, signal: result.signal,
+        elapsedMs: Date.now() - started,
+        error: result.error ? { name: result.error.name, message: result.error.message, code: result.error.code, errno: result.error.errno, syscall: result.error.syscall } : null
+      };
+      console.log(`PHONE SURFACE ${label} END ${JSON.stringify(diagnostic)}`);
       if (result.stdout) console.log(result.stdout.trim());
+      if (result.stderr) console.error(result.stderr.trim());
+      assert.equal(result.status, 0, `${JSON.stringify(diagnostic)}\nstdout:\n${result.stdout || '(empty)'}\nstderr:\n${result.stderr || '(empty)'}`);
     }
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
