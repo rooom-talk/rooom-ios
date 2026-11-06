@@ -154,7 +154,8 @@ test('TestFlight native advertisement diagnostics are read-only and require the 
  assert.match(audit,/appActive/);
  assert.match(audit,/pageEligible/);
  assert.match(audit,/slots/);
- assert.doesNotMatch(audit,/ImobileSdkAds\.|publisherId|mediaId|spotId|UserDefaults|HTTPURLSession|URLSession/);
+ assert.match(audit,/ImobileSdkAds\.getStatusBySpotID/);
+ assert.doesNotMatch(audit,/ImobileSdkAds\.(?!getStatusBySpotID|getSdkVersion)|"(?:publisherId|mediaId|spotId)"|UserDefaults|HTTPURLSession|URLSession/);
  // The new operation shares the same origin/main-frame guard as configure.
  const bridge=source.split('fileprivate func handle(')[1];
  assert.ok(bridge.indexOf('origin.host == "rooom-talk.com"') < bridge.indexOf('case "diagnostics":'));

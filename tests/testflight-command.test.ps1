@@ -28,8 +28,8 @@ function global:Invoke-RestMethod {
 }
 function global:Invoke-WebRequest {
     param([switch]$UseBasicParsing,$Uri,$Headers)
-    if ($Uri -notmatch '^https://rooom-talk.com/src/features/ads/(native-ipad-portrait-blank|native-ad-adapter|page-ad-runtime).mjs$') { throw 'Unexpected Web request' }
-    return @{StatusCode=200;Content=$(if($global:testflightFixture.fault -eq 'web'){'legacy'}else{"reply.fixedLayoutReservation==='before-fill-v1'; export async function syncNativeInitialLayoutOff; syncNativeInitialLayoutOff(globalThis,monetizationConfig)"})}
+    if ($Uri -notmatch '^https://rooom-talk.com/src/features/ads/(native-ipad-portrait-blank.mjs|native-ad-adapter.mjs|page-ad-runtime.mjs|ad-contract.mjs|verified-app-spots.mjs|monetization-config.mjs|ios-ipad-portrait-728.html)$') { throw 'Unexpected Web request' }
+    return @{StatusCode=200;Content=$(if($global:testflightFixture.fault -eq 'web'){'legacy'}else{"reply.fixedLayoutReservation==='before-fill-v1'; export async function syncNativeInitialLayoutOff; syncNativeInitialLayoutOff(globalThis,monetizationConfig); Invalid isolated iPad Web banner; https://rooom-talk.com/src/features/ads/ios-ipad-portrait-728.html; ...(tabletPortraitWebBanner !== undefined; tabletPortraitBottom:false; tabletPortraitWebBanner:{version:1,url:IPAD_WEB_BANNER_URL}; RoooMAdSurface/1; asid:1951545"})}
 }
 $entry=Join-Path $PSScriptRoot '../scripts/request-testflight.ps1'
 & $entry -ApprovedSha $sha -PullRequest 8 -CheckOnly

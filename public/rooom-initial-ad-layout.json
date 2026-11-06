@@ -21,18 +21,13 @@
       "publisherId": "85650",
       "mediaId": "597836",
       "spotId": "1951343"
-    },
-    {
-      "key": "ios.tablet.bottom.320",
-      "role": "tablet.bottom",
-      "device": "tablet",
-      "format": "banner",
-      "publisherId": "85650",
-      "mediaId": "597836",
-      "spotId": "1951334"
     }
   ],
   "rules": [],
+  "tabletPortraitWebBanner": {
+    "version": 1,
+    "url": "https://rooom-talk.com/src/features/ads/ios-ipad-portrait-728.html"
+  },
   "presentation": {
     "railSide": "left",
     "railWidth": 316,
