@@ -260,7 +260,7 @@ import Capacitor
 // cookies, main-page DOM or permission bridge exist on this dedicated surface.
 #if ROOOM_TEST2_RAIL
 // TEST2 build only. No Capacitor bridge or SDK exists in this isolated view.
-private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieStoreObserver {
+private final class RooomTestRail: NSObject, WKNavigationDelegate, WKUIDelegate, WKHTTPCookieStoreObserver {
     static let host = "rooom-test2.web.app"
     static let path = "/src/features/ads/test2-rail.html"
     let view: WKWebView
@@ -287,7 +287,7 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
         view = WKWebView(frame: frame, configuration: config)
         super.init()
-        view.navigationDelegate = self
+        view.navigationDelegate = self; view.uiDelegate = self
         view.isOpaque = false; view.backgroundColor = .clear; view.isHidden = true
         view.scrollView.isScrollEnabled = false; view.scrollView.bounces = false
         view.scrollView.showsVerticalScrollIndicator = false; view.scrollView.showsHorizontalScrollIndicator = false
@@ -348,7 +348,18 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
         if navigationAction.targetFrame?.isMainFrame == false {
             decisionHandler(url?.scheme == "https" ? .allow : .cancel); return
         }
+        if url?.absoluteString != "https://\(Self.host)\(Self.path)" { openUserLink(navigationAction) }
         decisionHandler(navigationAction.targetFrame?.isMainFrame == true && url?.absoluteString == "https://\(Self.host)\(Self.path)" ? .allow : .cancel)
+    }
+    private func openUserLink(_ action: WKNavigationAction) {
+        guard !released, action.navigationType == .linkActivated,
+              let url = action.request.url, url.scheme == "https",
+              UIApplication.shared.applicationState == .active else { return }
+        UIApplication.shared.open(url, options: [:], completionHandler: nil)
+    }
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        openUserLink(navigationAction); return nil
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard let navigation, navigation === activeNavigation else { return }
@@ -372,7 +383,7 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { failed() }
     func release() {
         released = true; generation += 1; ready = false; session = nil; activeNavigation = nil; expiration?.invalidate()
-        source.remove(self); view.stopLoading(); view.navigationDelegate = nil; view.removeFromSuperview()
+        source.remove(self); view.stopLoading(); view.navigationDelegate = nil; view.uiDelegate = nil; view.removeFromSuperview()
     }
 }
 #endif

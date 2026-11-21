@@ -48,7 +48,9 @@ jobs:
         run: |
           set -euo pipefail
           for destination in 'generic/platform=iOS Simulator' 'generic/platform=iOS'; do
-            xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -destination "$destination" \
+            configuration=Debug
+            if [ "$destination" = 'generic/platform=iOS' ]; then configuration=Release; fi
+            xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration "$configuration" -destination "$destination" \
               SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) ROOOM_IMOBILE_ADS ROOOM_TEST2_RAIL' \
               CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > "$RUNNER_TEMP/build.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/build.log"; exit 1; }
             grep -F '** BUILD SUCCEEDED **' "$RUNNER_TEMP/build.log"

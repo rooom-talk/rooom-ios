@@ -21,13 +21,17 @@ class Preferences {var javaScriptCanOpenWindowsAutomatically=false}
 class WKWebViewConfiguration {var websiteDataStore=WKWebsiteDataStore();var userContentController=WKUserContentController();var applicationNameForUserAgent:String?;let preferences=Preferences()}
 class WKNavigation:NSObject {}
 protocol WKNavigationDelegate:AnyObject {}
+protocol WKUIDelegate:AnyObject {}
+class WKWindowFeatures {}
+enum NavigationType {case linkActivated,other};enum AppState {case active}
+class UIApplication {static let shared=UIApplication();var applicationState=AppState.active;func open(_ url:URL,options:[String:Any],completionHandler:((Bool)->Void)?){}}
 enum WKNavigationActionPolicy {case allow,cancel}
 class Frame {var isMainFrame=true}
-class WKNavigationAction {var request=URLRequest(url:URL(string:"https://example.com")!);var targetFrame:Frame?=Frame()}
+class WKNavigationAction {var navigationType=NavigationType.other;var request=URLRequest(url:URL(string:"https://example.com")!);var targetFrame:Frame?=Frame()}
 enum Color {case clear};enum Inset {case never};enum World {case page}
 class Scroll {var isScrollEnabled=true,bounces=true,showsVerticalScrollIndicator=true,showsHorizontalScrollIndicator=true;var contentInsetAdjustmentBehavior=Inset.never}
 class UIView:NSObject {var frame=CGRect.zero;var superview:UIView?;func addSubview(_ v:UIView){v.superview=self};func removeFromSuperview(){superview=nil}}
-class WKWebView:UIView {let configuration:WKWebViewConfiguration;weak var navigationDelegate:WKNavigationDelegate?;var isOpaque=true,isHidden=false;var backgroundColor=Color.clear;let scrollView=Scroll();var loadCount=0;var last:WKNavigation?
+class WKWebView:UIView {let configuration:WKWebViewConfiguration;weak var navigationDelegate:WKNavigationDelegate?;weak var uiDelegate:WKUIDelegate?;var isOpaque=true,isHidden=false;var backgroundColor=Color.clear;let scrollView=Scroll();var loadCount=0;var last:WKNavigation?
  init(frame:CGRect,configuration:WKWebViewConfiguration){self.configuration=configuration;super.init();self.frame=frame}
  func stopLoading(){}
  func load(_ request:URLRequest)->WKNavigation?{loadCount+=1;let n=WKNavigation();last=n;return n}
