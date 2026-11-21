@@ -1,0 +1,48 @@
+name: TEST2 Web-managed rail unsigned build
+on:
+  pull_request:
+    paths: ['ios/App/App/RooomImobileBanner.swift', 'scripts/prepare-test2-rail.mjs', '.github/workflows/test2-rail-compile.yml']
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact source SHA (unsigned only)
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: imobile/adnw-sdk-ios
+          ref: 736b6edc9ab6e1ada1b0dc557531370cf5923dc8
+          path: vendor-sdk
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - name: Stage TEST2 configuration
+        run: |
+          npm ci
+          npm install --no-save @capacitor/keyboard@8.0.6
+          node scripts/prepare-test2-rail.mjs
+          npm run build
+          npx cap sync ios
+          node scripts/stage-imobile-official-sdk.mjs "$GITHUB_WORKSPACE/vendor-sdk"
+      - name: Compile simulator and device without signing
+        run: |
+          set -euo pipefail
+          for destination in 'generic/platform=iOS Simulator' 'generic/platform=iOS'; do
+            xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -destination "$destination" \
+              SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) ROOOM_IMOBILE_ADS ROOOM_TEST2_RAIL' \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > "$RUNNER_TEMP/build.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/build.log"; exit 1; }
+            grep -F '** BUILD SUCCEEDED **' "$RUNNER_TEMP/build.log"
+          done
+      - name: Boundary
+        run: echo 'No signing, TestFlight upload, Store release, Hosting deploy or DB writes.'
