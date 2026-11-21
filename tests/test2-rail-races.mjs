@@ -39,7 +39,7 @@ class WKWebView:UIView {let configuration:WKWebViewConfiguration;weak var naviga
 }
 `;
 const checks=String.raw`
-func make(_ cookie:String?)->(WKHTTPCookieStore,RooomTestRail){let store=WKHTTPCookieStore();if let cookie{store.cookies=[Cookie(value:cookie)]};return(store,RooomTestRail(source:store,frame:CGRect(x:0,y:0,width:316,height:724)))}
+func make(_ cookie:String?)->(WKHTTPCookieStore,RooomTestRail){let store=WKHTTPCookieStore();if let cookie{store.cookies=[Cookie(value:cookie)]};let rail=RooomTestRail(source:store,frame:CGRect(x:0,y:0,width:316,height:724));rail.setPresentationVisible(true);return(store,rail)}
 let (s,r)=make("a")
 r.cookiesDidChange(in:s);drain();precondition(r.view.loadCount==1,"same-cookie notification lost initial load")
 let old=r.view.last!

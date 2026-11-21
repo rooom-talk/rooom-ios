@@ -2,6 +2,7 @@
 # Read-only checks plus temporary compiler output. No signing/upload/deployment.
 set -eu
 cd "$(dirname "$0")/.."
+node tests/web-presentation-permission.mjs
 node --test tests/ios-imobile-setup.test.mjs tests/initial-layout-contract.test.mjs tests/startup-canvas.test.mjs tests/iphone-inline-runtime.test.mjs tests/phone-overlay-runtime.test.mjs tests/phone-full-canvas.test.mjs
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT HUP INT TERM

@@ -42,6 +42,8 @@ jobs:
           npm run build
           npx cap sync ios
           node scripts/stage-imobile-official-sdk.mjs "$GITHUB_WORKSPACE/vendor-sdk"
+      - name: Actual Web presentation permission state
+        run: node tests/web-presentation-permission.mjs
       - name: Actual Swift coordinator race tests with isolated transport doubles
         run: node tests/test2-rail-races.mjs
       - name: Compile simulator and device without signing

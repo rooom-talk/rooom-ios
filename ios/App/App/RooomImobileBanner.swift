@@ -273,6 +273,8 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKUIDelegate,
     private var expiration: Timer?
     private var released = false
     private var ready = false
+    private var presentationVisible = false
+    func setPresentationVisible(_ value: Bool) { presentationVisible = value; view.isHidden = !ready || !value }
     static func page(_ url: URL?) -> Bool {
         guard let url, url.scheme == "https", url.host == host,
               url.port == nil || url.port == 443, url.user == nil, url.password == nil else { return false }
@@ -338,7 +340,7 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKUIDelegate,
     func place(in shell: UIView, frame: CGRect) {
         view.frame = frame
         if view.superview !== shell { shell.addSubview(view) }
-        view.isHidden = !ready
+        view.isHidden = !ready || !presentationVisible
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         let url = navigationAction.request.url
@@ -374,7 +376,7 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKUIDelegate,
             guard let self, !self.released, ticket == self.generation else { return }
             if case .success(let value) = result { self.ready = (value as? Bool) == true }
             else { self.ready = false }
-            self.view.isHidden = !self.ready
+            self.view.isHidden = !self.ready || !self.presentationVisible
         }
     }
     private func failed() { generation += 1; activeNavigation = nil; ready = false; view.isHidden = true }
@@ -612,6 +614,47 @@ private final class RooomSdkSlot: NSObject, IMobileSdkAdsDelegate {
 }
 
 final class RooomMonetization {
+    // Pure document permission; Web owns every presentation decision.
+    struct WebPresentationPermission {
+        var documentId = UUID().uuidString
+        var sequence = 0
+        var allowed = false
+        var committed = false
+        mutating func reset() { self = Self() }
+        func matches(_ document: String, _ value: Int) -> Bool { documentId == document && sequence == value }
+        mutating func set(document: String, sequence value: Int, allowed next: Bool) -> Bool {
+            guard document == documentId, value > sequence, value < 1_000_000_000 else { return false }
+            sequence = value; allowed = next; committed = false; return true
+        }
+        mutating func commit(document: String, sequence value: Int) -> Bool {
+            guard matches(document, value), allowed else { return false }
+            committed = true; return true
+        }
+    }
+    // End pure document permission.
+    private(set) var presentation = WebPresentationPermission()
+    private var presentationLease: Timer?
+    func setPresentation(document: String, sequence: Int, allowed: Bool, cover: UIColor?) throws {
+        guard presentation.set(document: document, sequence: sequence, allowed: allowed) else { throw RooomAdError.invalidRequest }
+        presentationLease?.invalidate(); presentationLease = nil
+        controller?.setPresentationCover(allowed ? cover : nil)
+        hideAll() // A new preparation cannot expose a previous committed surface.
+        if allowed {
+            presentationLease = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
+                self?.abortPresentation(document: document, sequence: sequence)
+            }
+        }
+        layout()
+    }
+    func commitPresentation(document: String, sequence: Int) throws {
+        guard presentation.commit(document: document, sequence: sequence) else { throw RooomAdError.invalidRequest }
+        presentationLease?.invalidate(); presentationLease = nil; controller?.setPresentationCover(nil); layout()
+    }
+    func abortPresentation(document: String, sequence: Int) {
+        guard presentation.matches(document, sequence), !presentation.committed else { return }
+        presentation.allowed = false; presentationLease?.invalidate(); presentationLease = nil; controller?.setPresentationCover(nil); layout()
+    }
+
     weak var controller: RooomAdsBridgeViewController?
     private var config = RooomAdConfig.off
     private var initialLayout: RooomAdConfig
@@ -666,9 +709,11 @@ final class RooomMonetization {
         let old = entries; entries.removeAll(); for entry in old.values { entry.release() }
     }
     private func beginDocument() {
+        presentationLease?.invalidate(); presentationLease = nil; presentation.reset(); controller?.setPresentationCover(nil)
         releaseCreatives(); config = .off; layout()
     }
     func clear() {
+        presentationLease?.invalidate(); presentationLease = nil; presentation.reset(); controller?.setPresentationCover(nil)
         releaseCreatives()
         config = .off; setReservation(RooomAdInsets())
     }
@@ -730,6 +775,7 @@ final class RooomMonetization {
                 "slots": slots]
     }
     private func entry(_ slot: RooomAdSlot) throws -> RooomSdkSlot {
+        guard presentation.allowed && presentation.committed else { throw RooomAdError.invalidRequest }
         if let e = entries[slot.key] { return e }
         guard entries.count < RooomAdPolicy.maxSlots else { throw RooomAdError.limit }
         let e = RooomSdkSlot(slot: slot, owner: self); entries[slot.key] = e; e.start(); return e
@@ -739,17 +785,17 @@ final class RooomMonetization {
     // layout only and never starts an ad request or claims Ready/impression.
     private func phoneReservedInsets(safe: RooomAdInsets) -> RooomAdInsets {
         guard let shell else { return RooomAdInsets() }
-        let pendingOrVisible = Set(initialLayout.slots.filter { slot in
-            guard let entry = entries[slot.key] else { return true }
-            return !entry.failed && !entry.released
-        }.map { $0.key })
+        // Geometry is independent of creative readiness/failure. Explicit Web
+        // OFF/configuration and keyboard posture still own layout changes.
         return RooomAdPolicy.fixedLayout(config: initialLayout, device: device,
             bounds: shell.bounds.size, safe: safe, keyboard: keyboard,
-            readyKeys: pendingOrVisible).reserved
+            readyKeys: nil).reserved
     }
+
     func layout() {
         guard !layingOut, let shell, let web else { return }
         layingOut = true; defer { layingOut = false }
+        guard presentation.allowed else { hideAll(); setReservation(RooomAdInsets()); return }
         // The configured launch URL is available before WKWebView has its first
         // URL. After navigation starts, always use the real page URL.
         let pageURL = web.url ?? controller?.bridge?.config.serverURL
@@ -769,6 +815,7 @@ final class RooomMonetization {
                            height: max(0, shell.bounds.height - safe.top - safe.bottom))
         setReservation(RooomAdInsets(left: safe.left + railWidth))
         if testRail == nil { testRail = RooomTestRail(source: web.configuration.websiteDataStore.httpCookieStore, frame: frame) }
+        testRail?.setPresentationVisible(presentation.committed)
         testRail?.place(in: shell, frame: frame)
         return
 #else
@@ -776,11 +823,16 @@ final class RooomMonetization {
             hideAll(); setReservation(RooomAdInsets()); return
         }
         let s = shell.safeAreaInsets, safe = RooomAdInsets(top: s.top, left: s.left, bottom: s.bottom, right: s.right)
+        if !presentation.committed {
+            setReservation(RooomAdPolicy.fixedLayout(config: initialLayout, device: device,
+                bounds: shell.bounds.size, safe: safe, keyboard: keyboard,
+                readyKeys: nil, reserveTabletBottom: true).reserved)
+            return
+        }
         // Preserve the iPad pre-document/loading geometry unchanged.
         if device == "tablet" {
-            let ready = Set(entries.values.filter { $0.ready && !$0.failed }.map { $0.slot.key })
             setReservation(RooomAdPolicy.fixedLayout(config: initialLayout, device: device, bounds: shell.bounds.size,
-                safe: safe, keyboard: keyboard, readyKeys: ready, reserveTabletBottom: true).reserved)
+                safe: safe, keyboard: keyboard, readyKeys: nil, reserveTabletBottom: true).reserved)
         }
         guard UIApplication.shared.applicationState == .active else { hideAll(); return }
         if device == "phone" { setReservation(phoneReservedInsets(safe: safe)) }
@@ -883,11 +935,71 @@ private final class RooomAdMessageHandler: NSObject, WKScriptMessageHandlerWithR
 final class RooomAdsBridgeViewController: CAPBridgeViewController {
     var monetization: RooomMonetization?
     var adReservationChanged: ((RooomAdInsets) -> Void)?
+    private var presentationAcknowledgement: (document: String, sequence: Int, allowed: Bool, reply: (Any?, String?) -> Void)?
+    private var flushingPresentation = false
+    private func flushPresentationAcknowledgement() {
+        guard !flushingPresentation, let pending = presentationAcknowledgement, let engine = monetization else { return }
+        flushingPresentation = true; defer { flushingPresentation = false }
+        guard engine.presentation.matches(pending.document, pending.sequence),
+              engine.presentation.allowed == pending.allowed,
+              UIApplication.shared.applicationState == .active else {
+            presentationAcknowledgement = nil; pending.reply(nil, "Stale presentation"); return
+        }
+        parent?.view.layoutIfNeeded()
+        if UIDevice.current.userInterfaceIdiom == .phone && phoneOverlayRequested && !phoneOverlayLayoutReady { return }
+        guard let web = bridge?.webView, web.bounds.width > 0, web.bounds.height > 0 else { return }
+        presentationAcknowledgement = nil
+        pending.reply(["version":1,"ok":true,"documentId":pending.document,"sequence":pending.sequence,
+            "allowed":pending.allowed,"viewportWidth":web.bounds.width,"viewportHeight":web.bounds.height],nil)
+    }
+    private func handlePresentation(_ message: WKScriptMessage, body: [String:Any], reply: @escaping (Any?,String?) -> Void) {
+#if ROOOM_TEST2_RAIL
+        let expectedHost = "rooom-test2.web.app"
+#else
+        let expectedHost = "rooom-talk.com"
+#endif
+        let origin = message.frameInfo.securityOrigin
+        guard message.frameInfo.isMainFrame, origin.protocol == "https", origin.host == expectedHost,
+              [0,443].contains(origin.port), bridge?.webView?.url?.scheme == "https",
+              bridge?.webView?.url?.host == expectedHost, body["version"] as? Int == 1,
+              let engine = monetization, let command = body["command"] as? String else { reply(nil,"Untrusted presentation"); return }
+        if command == "snapshot" {
+            reply(["version":1,"documentId":engine.presentation.documentId,"sequence":engine.presentation.sequence],nil); return
+        }
+        guard let document = body["documentId"] as? String, let sequence = body["sequence"] as? Int else { reply(nil,"Invalid presentation"); return }
+        do {
+            if command == "commit" {
+                guard UIApplication.shared.applicationState == .active else { throw RooomAdError.invalidRequest }
+                try engine.commitPresentation(document: document, sequence: sequence)
+                reply(["version":1,"ok":true,"documentId":document,"sequence":sequence],nil); return
+            }
+            guard command == "set", let allowed = body["allowed"] as? Bool,
+                  !allowed || UIApplication.shared.applicationState == .active else { throw RooomAdError.invalidRequest }
+            var cover: UIColor? = nil
+            if allowed {
+                guard let rgb = body["cover"] as? [NSNumber], rgb.count == 3,
+                      rgb.allSatisfy({ $0.doubleValue.isFinite && $0.doubleValue >= 0 && $0.doubleValue <= 255 }) else { throw RooomAdError.invalidRequest }
+                cover = UIColor(red: CGFloat(rgb[0].doubleValue / 255), green: CGFloat(rgb[1].doubleValue / 255), blue: CGFloat(rgb[2].doubleValue / 255), alpha: 1)
+            }
+            try engine.setPresentation(document: document, sequence: sequence, allowed: allowed, cover: cover)
+            if let old = presentationAcknowledgement { old.reply(nil,"Superseded presentation") }
+            presentationAcknowledgement = (document,sequence,allowed,reply)
+            DispatchQueue.main.async { [weak self] in self?.flushPresentationAcknowledgement() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, weak engine] in
+                guard let self, let pending = self.presentationAcknowledgement,
+                      pending.document == document, pending.sequence == sequence else { return }
+                self.presentationAcknowledgement = nil
+                engine?.abortPresentation(document: document, sequence: sequence)
+                pending.reply(nil,"Presentation layout acknowledgement timeout")
+            }
+        } catch { reply(nil,"Invalid or stale presentation") }
+    }
+
     // Per-document presentation agreement; missing Web keeps full height and hides ads.
     private(set) var phoneOverlayDocument = UUID().uuidString
     private(set) var phoneOverlayRequested = false
     var phoneOverlayLayoutReady = false {
-        didSet { if oldValue != phoneOverlayLayoutReady { monetization?.layout() } }
+        didSet { if oldValue != phoneOverlayLayoutReady { monetization?.layout(); flushPresentationAcknowledgement() } }
     }
     func installPhoneSurfaceSeed(_ config: RooomAdConfig) {
         guard UIDevice.current.userInterfaceIdiom == .phone, let content = bridge?.webView?.configuration.userContentController else { return }
@@ -909,6 +1021,8 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
     private var overlayNavigation: NSKeyValueObservation?
     private var adHandler: RooomAdMessageHandler?
     private var canvasBackground = RooomInitialCanvas.color
+    private var presentationCover: UIColor?
+    fileprivate func setPresentationCover(_ color: UIColor?) { presentationCover = color; parent?.view.backgroundColor = color ?? canvasBackground }
     private func applyCanvasBackground(_ color: UIColor) {
         guard let web = bridge?.webView else { return }
         canvasBackground = color
@@ -918,7 +1032,7 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
         web.backgroundColor = color
         web.scrollView.backgroundColor = color
         web.underPageBackgroundColor = color
-        parent?.view.backgroundColor = color
+        parent?.view.backgroundColor = presentationCover ?? color
         web.window?.backgroundColor = color
     }
     override func capacitorDidLoad() {
@@ -928,6 +1042,11 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
         // for a document or an ad capability/configure reply to paint the canvas.
         applyCanvasBackground(canvasBackground)
         monetization = RooomMonetization(controller: self)
+        // Capability only. Web owns state, timing, configuration and protocol calls.
+        let presentationCapability = "window.__rooomNativeAdPresentationVersion=1;"
+        web.configuration.userContentController.addUserScript(WKUserScript(source: presentationCapability,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        web.evaluateJavaScript(presentationCapability, completionHandler: nil)
         overlayNavigation = web.observe(\.isLoading, options: [.new]) { [weak self] web, _ in
             guard let self else { return }
             if web.isLoading {
@@ -951,6 +1070,9 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
         monetization?.layout()
     }
     fileprivate func handle(_ message: WKScriptMessage, reply: @escaping (Any?, String?) -> Void) {
+        if let body = message.body as? [String:Any], body["op"] as? String == "presentation" {
+            handlePresentation(message, body: body, reply: reply); return
+        }
 #if ROOOM_TEST2_RAIL
         reply(nil, "Production SDK bridge is disabled in the TEST2 layout build")
         return
