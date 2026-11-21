@@ -520,6 +520,9 @@ private final class RooomSdkSlot: NSObject, IMobileSdkAdsDelegate {
         view.clipsToBounds = true; view.isHidden = true
     }
     func start() {
+#if ROOOM_TEST2_RAIL
+        fail("test2-sdk-disabled"); return
+#endif
         diagnosticPhase = "registering"
         if let old = Self.registered[slot.spotId] {
             // Layout/key are Web configuration, not SDK registration identity.
@@ -641,7 +644,12 @@ final class RooomMonetization {
         navigation = web?.observe(\.isLoading, options: [.new]) { [weak self] web, _ in
             if web.isLoading { self?.beginDocument() }
         }
-        pageLocation = web?.observe(\.url, options: [.new]) { [weak self] _, _ in self?.layout() }
+        pageLocation = web?.observe(\.url, options: [.new]) { [weak self] web, _ in
+#if ROOOM_TEST2_RAIL
+            print("ROOOM_TEST2_URL host=\(web.url?.host ?? "missing") path=\(web.url?.path ?? "missing")")
+#endif
+            self?.layout()
+        }
         observers.append(NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.hideAll() })
         observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.layout() })
     }
@@ -941,9 +949,20 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
         web.configuration.userContentController.addScriptMessageHandler(handler, contentWorld: .page, name: "rooomMonetization")
         // Same first-party Web module for TOP and direct room notification entry.
         // Missing/unpublished modules fail closed: current UI remains unchanged.
+#if ROOOM_TEST2_RAIL
+        // Release-binary marker is consumed by the archive/IPA guard. Log no
+        // query strings, user identifiers or cookies; only host/path and build.
+        let marker = "ROOOM_TEST2_COMPILED_DUMMY_ONLY_V1"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        print("\(marker) build=\(build) configuredHost=\(bridge?.config.serverURL.host ?? "missing")")
+        let audit = "document.documentElement.dataset.rooomTest2NativeMode='" + marker + "';document.documentElement.dataset.rooomTest2NativeBuild='" + build + "';"
+        web.configuration.userContentController.addUserScript(WKUserScript(source: audit, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        web.evaluateJavaScript(audit, completionHandler: nil)
+#else
         let bootstrap = RooomAdBootstrap.script(isTablet: UIDevice.current.userInterfaceIdiom == .pad)
         web.configuration.userContentController.addUserScript(WKUserScript(source: bootstrap, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         web.evaluateJavaScript(bootstrap, completionHandler: nil)
+#endif
     }
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)

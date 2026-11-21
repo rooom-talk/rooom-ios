@@ -128,7 +128,12 @@ jobs:
         run: npm run build
 
       - name: Sync Capacitor iOS
-        run: npx cap sync ios
+        run: |
+          npx cap sync ios
+          if [ "${{ inputs.target_environment }}" = test2 ]; then
+            node scripts/check-test2-archive.mjs config capacitor.config.json
+            node scripts/check-test2-archive.mjs config ios/App/App/capacitor.config.json
+          fi
 
       - name: Stage hash-verified official i-mobile SDK after Capacitor sync
         run: node scripts/stage-imobile-official-sdk.mjs "$GITHUB_WORKSPACE/vendor-sdk"
@@ -272,6 +277,10 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx "${ROOOM_MARKETING_VERSION:-1.6}"
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx 'com.rooom.talk'
           /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx "$BUILD_NUMBER"
+          if [ "${{ inputs.target_environment }}" = test2 ]; then
+            cd ../..
+            node scripts/check-test2-archive.mjs bundle "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app"
+          fi
           codesign --verify --deep --strict "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app"
           test -f "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/embedded.mobileprovision"
 
@@ -310,6 +319,15 @@ jobs:
 
       # Public repository: do not upload the signed IPA to GitHub artifacts.
       # IPA exists only on the ephemeral Mac runner until Apple upload completes.
+
+      - name: Verify exported TEST2 IPA before upload
+        if: inputs.target_environment == 'test2'
+        run: |
+          set -euo pipefail
+          IPA="$(find "$RUNNER_TEMP/export" -name '*.ipa' -type f)"
+          test "$(printf '%s\n' "$IPA" | wc -l | tr -d ' ')" = 1
+          unzip -q "$IPA" -d "$RUNNER_TEMP/test2-export-audit"
+          node scripts/check-test2-archive.mjs bundle "$RUNNER_TEMP/test2-export-audit/Payload/App.app"
 
       - name: Prepare App Store Connect API key
         env:
