@@ -258,6 +258,136 @@ import Capacitor
 // The publisher's Web 728x90 tag has no APP SDK spot. Keep its scripts outside
 // the authenticated Capacitor WebView: no handlers, injected app scripts, app
 // cookies, main-page DOM or permission bridge exist on this dedicated surface.
+#if ROOOM_TEST2_RAIL
+// TEST2 build only. No Capacitor bridge or SDK exists in this isolated view.
+private final class RooomTestRail: NSObject, WKNavigationDelegate, WKUIDelegate, WKHTTPCookieStoreObserver {
+    static let host = "rooom-test2.web.app"
+    static let path = "/src/features/ads/test2-rail.html"
+    let view: WKWebView
+    private let source: WKHTTPCookieStore
+    private var generation = 0
+    private var session: String?
+    private var syncing = false, pending = false, needsLoad = false
+    private var sessionExpiry: Date?
+    private var activeNavigation: WKNavigation?
+    private var expiration: Timer?
+    private var released = false
+    private var ready = false
+    static func page(_ url: URL?) -> Bool {
+        guard let url, url.scheme == "https", url.host == host,
+              url.port == nil || url.port == 443, url.user == nil, url.password == nil else { return false }
+        return ["/", "/index.html", "/room.html"].contains(url.path)
+    }
+    init(source: WKHTTPCookieStore, frame: CGRect) {
+        self.source = source
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .nonPersistent()
+        config.userContentController = WKUserContentController()
+        config.applicationNameForUserAgent = "RoooMTest2Rail/1 Build/" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0")
+        config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        view = WKWebView(frame: frame, configuration: config)
+        super.init()
+        view.navigationDelegate = self; view.uiDelegate = self
+        view.isOpaque = false; view.backgroundColor = .clear; view.isHidden = true
+        view.scrollView.isScrollEnabled = false; view.scrollView.bounces = false
+        view.scrollView.showsVerticalScrollIndicator = false; view.scrollView.showsHorizontalScrollIndicator = false
+        view.scrollView.contentInsetAdjustmentBehavior = .never
+        source.add(self); synchronize()
+    }
+    func cookiesDidChange(in cookieStore: WKHTTPCookieStore) { synchronize() }
+    private func synchronize() {
+        guard !released else { return }
+        if syncing { pending = true; return }
+        syncing = true
+        source.getAllCookies { [weak self] cookies in
+            guard let self, !self.released else { return }
+            let cookie = cookies.first { $0.name == "__session" && $0.domain == Self.host && $0.path == "/" && $0.isSecure && $0.isHTTPOnly && ($0.expiresDate == nil || $0.expiresDate! > Date()) }
+            guard cookie?.value != self.session || cookie?.expiresDate != self.sessionExpiry else { self.finishSync(); return }
+            self.generation += 1; self.expiration?.invalidate()
+            self.ready = false; self.view.isHidden = true; self.activeNavigation = nil; self.view.stopLoading()
+            let store = self.view.configuration.websiteDataStore.httpCookieStore
+            store.getAllCookies { [weak self] old in
+                guard let self, !self.released else { return }
+                let group = DispatchGroup()
+                for c in old { group.enter(); store.delete(c) { group.leave() } }
+                group.notify(queue: .main) { [weak self] in
+                    guard let self, !self.released else { return }
+                    guard let cookie else { self.session = nil; self.sessionExpiry = nil; self.needsLoad = false; self.finishSync(); return }
+                    store.setCookie(cookie) { [weak self] in
+                        guard let self, !self.released else { return }
+                        self.session = cookie.value; self.sessionExpiry = cookie.expiresDate; self.needsLoad = true
+                        if let date = cookie.expiresDate {
+                            self.expiration = Timer.scheduledTimer(withTimeInterval: max(0.01, date.timeIntervalSinceNow), repeats: false) { [weak self] _ in self?.synchronize() }
+                        }
+
+                        self.finishSync()
+                    }
+                }
+            }
+        }
+    }
+    private func finishSync() {
+        syncing = false
+        if pending { pending = false; synchronize(); return }
+        if needsLoad && session != nil && !released {
+            needsLoad = false
+            let url = URL(string: "https://\(Self.host)\(Self.path)")!
+            activeNavigation = view.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+        }
+    }
+    func place(in shell: UIView, frame: CGRect) {
+        view.frame = frame
+        if view.superview !== shell { shell.addSubview(view) }
+        view.isHidden = !ready
+    }
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        let url = navigationAction.request.url
+        // Provider permissions remain Web-owned CSP. The shipped TEST2 page
+        // has frame-src 'none' and contains no providers; future HTTPS frames
+        // do not require a new Native inventory or SDK bridge.
+        if navigationAction.targetFrame?.isMainFrame == false {
+            decisionHandler(url?.scheme == "https" ? .allow : .cancel); return
+        }
+        if url?.absoluteString != "https://\(Self.host)\(Self.path)" { openUserLink(navigationAction) }
+        decisionHandler(navigationAction.targetFrame?.isMainFrame == true && url?.absoluteString == "https://\(Self.host)\(Self.path)" ? .allow : .cancel)
+    }
+    private func openUserLink(_ action: WKNavigationAction) {
+        guard !released, action.navigationType == .linkActivated,
+              let url = action.request.url, url.scheme == "https",
+              UIApplication.shared.applicationState == .active else { return }
+        UIApplication.shared.open(url, options: [:], completionHandler: nil)
+    }
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        openUserLink(navigationAction); return nil
+    }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let navigation, navigation === activeNavigation else { return }
+        let ticket = generation
+        webView.callAsyncJavaScript("""
+          if(document.documentElement.dataset.railReady==='1')return true;
+          return await new Promise(resolve=>{
+            const done=()=>{clearTimeout(timer);removeEventListener('rooom:rail-ready',done);resolve(document.documentElement.dataset.railReady==='1');};
+            const timer=setTimeout(done,5000);addEventListener('rooom:rail-ready',done,{once:true});
+          });
+          """, arguments: [:], in: nil, in: .page) { [weak self] result in
+            guard let self, !self.released, ticket == self.generation else { return }
+            if case .success(let value) = result { self.ready = (value as? Bool) == true }
+            else { self.ready = false }
+            self.view.isHidden = !self.ready
+        }
+    }
+    private func failed() { generation += 1; activeNavigation = nil; ready = false; view.isHidden = true }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { if let navigation, navigation === activeNavigation { failed() } }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { if let navigation, navigation === activeNavigation { failed() } }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { failed() }
+    func release() {
+        released = true; generation += 1; ready = false; session = nil; activeNavigation = nil; expiration?.invalidate()
+        source.remove(self); view.stopLoading(); view.navigationDelegate = nil; view.uiDelegate = nil; view.removeFromSuperview()
+    }
+}
+#endif
+
 private final class RooomTabletWebAd: NSObject, WKNavigationDelegate, WKUIDelegate {
     let view: WKWebView
     private(set) var phase = "created"
@@ -487,6 +617,9 @@ final class RooomMonetization {
     private var initialLayout: RooomAdConfig
     private var entries: [String: RooomSdkSlot] = [:]
     private var tabletWebAd: RooomTabletWebAd?
+#if ROOOM_TEST2_RAIL
+    private var testRail: RooomTestRail?
+#endif
     private var keyboard = false, layingOut = false
     private var observers: [NSObjectProtocol] = []
     private var navigation: NSKeyValueObservation?
@@ -526,6 +659,9 @@ final class RooomMonetization {
         releaseCreatives(); config = valid; layout()
     }
     private func releaseCreatives() {
+#if ROOOM_TEST2_RAIL
+        testRail?.release(); testRail = nil
+#endif
         tabletWebAd?.release(); tabletWebAd = nil
         let old = entries; entries.removeAll(); for entry in old.values { entry.release() }
     }
@@ -542,6 +678,9 @@ final class RooomMonetization {
     func setKeyboardVisible(_ value: Bool) { keyboard = value; if value { hideFeed() }; layout() }
     func hideFeed() { for e in entries.values where e.slot.format == .native { e.view.isHidden = true } }
     private func hideAll() {
+#if ROOOM_TEST2_RAIL
+        testRail?.release(); testRail = nil
+#endif
         tabletWebAd?.release(); tabletWebAd = nil
         for e in entries.values { e.view.isHidden = true }
         if device != "tablet" { setReservation(RooomAdInsets()) }
@@ -614,6 +753,25 @@ final class RooomMonetization {
         // The configured launch URL is available before WKWebView has its first
         // URL. After navigation starts, always use the real page URL.
         let pageURL = web.url ?? controller?.bridge?.config.serverURL
+#if ROOOM_TEST2_RAIL
+        // Test builds never enter the production SDK lifecycle, even on navigation.
+        guard device == "tablet", RooomTestRail.page(pageURL), !keyboard,
+              UIApplication.shared.applicationState == .active,
+              shell.bounds.width > shell.bounds.height else {
+            hideAll(); setReservation(RooomAdInsets()); return
+        }
+        let safe = shell.safeAreaInsets
+        let railWidth = RooomAdPresentation.standard.railWidth
+        guard shell.bounds.width - safe.left - safe.right - railWidth >= 320 else {
+            hideAll(); setReservation(RooomAdInsets()); return
+        }
+        let frame = CGRect(x: safe.left, y: safe.top, width: railWidth,
+                           height: max(0, shell.bounds.height - safe.top - safe.bottom))
+        setReservation(RooomAdInsets(left: safe.left + railWidth))
+        if testRail == nil { testRail = RooomTestRail(source: web.configuration.websiteDataStore.httpCookieStore, frame: frame) }
+        testRail?.place(in: shell, frame: frame)
+        return
+#else
         guard RooomAdPolicy.advertisingPage(pageURL) else {
             hideAll(); setReservation(RooomAdInsets()); return
         }
@@ -655,6 +813,7 @@ final class RooomMonetization {
             // uses the same geometry, without changing SDK show/refresh logic.
             setReservation(phoneReservedInsets(safe: safe))
         }
+#endif
     }
     fileprivate func slotChanged(_ entry: RooomSdkSlot, status: String) {
         guard entries[entry.slot.key] === entry else { return }
@@ -792,6 +951,10 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
         monetization?.layout()
     }
     fileprivate func handle(_ message: WKScriptMessage, reply: @escaping (Any?, String?) -> Void) {
+#if ROOOM_TEST2_RAIL
+        reply(nil, "Production SDK bridge is disabled in the TEST2 layout build")
+        return
+#endif
         let origin = message.frameInfo.securityOrigin
         guard message.frameInfo.isMainFrame, origin.protocol == "https", origin.host == "rooom-talk.com",
               [0, 443].contains(origin.port), RooomAdPolicy.trusted(bridge?.webView?.url),

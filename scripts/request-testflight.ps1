@@ -2,7 +2,10 @@ param(
     [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ApprovedSha,
     [Parameter(Mandatory=$true)][int]$PullRequest,
     [switch]$CheckOnly,
-    [switch]$BuildOnly
+    [switch]$BuildOnly,
+    [switch]$Test2Rail,
+    [string]$WebRoot,
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$WebSha
 )
 $ErrorActionPreference = 'Stop'
 $repo = 'rooom-talk/rooom-ios'
@@ -30,10 +33,10 @@ $merged = Read-GitHub ('git/commits/'+$ApprovedSha)
 $tested = Read-GitHub ('git/commits/'+$pr.head.sha)
 if ($merged.tree.sha -ne $tested.tree.sha) { throw 'Merged content differs from the tested PR; inspect before upload' }
 $workflow = Read-GitHub ('contents/.github/workflows/main.yml?ref='+$ApprovedSha)
-if ($workflow.sha -ne '6e61eefa9ef0e3d44c4d02d25e593e7f489c9e7d') { throw 'TestFlight workflow differs from the audited manual-only upload path' }
+if ($workflow.sha -ne '788af4fc76d3ece8ff556478155edd610cdc3965') { throw 'TestFlight workflow differs from the audited manual-only upload path' }
 if ($BuildOnly) {
     if ($CheckOnly) { Write-Host 'BUILD PREFLIGHT PASS: no workflow dispatched, no Native build or upload.'; return }
-    foreach ($name in @('ads-source-check.yml','ads-native-compile.yml')) {
+    foreach ($name in @('ads-source-check.yml','ads-native-compile.yml') + $(if($Test2Rail){@('test2-rail-compile.yml')}else{@()})) {
         if ((Read-GitHub ('branches/'+$branch)).commit.sha -ne $ApprovedSha) { throw 'Release changed during preflight' }
         $request = @{ref=$branch;inputs=@{approved_sha=$ApprovedSha}} | ConvertTo-Json -Depth 4
         Invoke-RestMethod -Headers $headers -Uri ('https://api.github.com/repos/'+$repo+'/actions/workflows/'+$name+'/dispatches') -Method Post -ContentType 'application/json' -Body $request | Out-Null
@@ -47,10 +50,18 @@ if (@($runs.workflow_runs).Count -eq 0) {
     $checkSha=$pr.head.sha
     $runs = Read-GitHub ('actions/runs?head_sha='+$checkSha+'&per_page=100')
 }
-foreach ($path in @('.github/workflows/ads-source-check.yml','.github/workflows/ads-native-compile.yml')) {
+foreach ($path in @('.github/workflows/ads-source-check.yml','.github/workflows/ads-native-compile.yml') + $(if($Test2Rail){@('.github/workflows/test2-rail-compile.yml')}else{@()})) {
     $run = @($runs.workflow_runs | Where-Object { $_.path -eq $path -and $_.head_sha -eq $checkSha } | Sort-Object id -Descending | Select-Object -First 1)
     if ($run.Count -ne 1 -or $run[0].status -ne 'completed' -or $run[0].conclusion -ne 'success') { throw ('Required candidate verification is not successful: '+$path) }
 }
+if ($Test2Rail) {
+    if (!$WebRoot -or !$WebSha) { throw 'TEST2 requires the reviewed WebRoot and WebSha; deploy and verify TEST2 Web assets first' }
+    $verify=Join-Path $WebRoot 'scripts/check-test2-rail-live.cjs'
+    if (!(Test-Path -LiteralPath $verify -PathType Leaf)) { throw 'TEST2 live asset checker missing' }
+    & node --use-system-ca $verify $WebSha
+    if ($LASTEXITCODE -ne 0) { throw 'TEST2 Web assets or entry gate differ; no upload requested' }
+}
+if (!$Test2Rail) {
 $webChecks=@{
     'native-ipad-portrait-blank.mjs'="reply.fixedLayoutReservation==='before-fill-v1'"
     'native-ad-adapter.mjs'='export async function syncNativeInitialLayoutOff'
@@ -77,11 +88,12 @@ if ($surfaceCss.StatusCode -ne 200 -or !$surfaceCss.Content.Contains('--rooom-ph
     $surfaceHelper.StatusCode -ne 200 -or !$surfaceHelper.Content.Contains("cap.phoneOverlay.surface === 'full-height-v2'")) {
     throw 'Publish the full-canvas Web CSS/helper first, then run this same TestFlight command again'
 }
+}
 Write-Host ('Verified merged candidate '+$ApprovedSha+'; app com.rooom.talk; iOS 1.6; generation 3.')
 Write-Host 'The existing Mac workflow selects a build number greater than Apple latest. No Hosting or public Store release.'
 if ($CheckOnly) { Write-Host 'CHECK ONLY: no workflow dispatched, no signing or upload.'; return }
 if ((Read-GitHub ('branches/'+$branch)).commit.sha -ne $ApprovedSha) { throw 'Release changed during preflight' }
-$body = @{ref=$branch;inputs=@{approved_sha=$ApprovedSha;confirmation='UPLOAD_TESTFLIGHT'}} | ConvertTo-Json -Depth 4
+$body = @{ref=$branch;inputs=@{approved_sha=$ApprovedSha;confirmation='UPLOAD_TESTFLIGHT';target_environment=$(if($Test2Rail){'test2'}else{'production'})}} | ConvertTo-Json -Depth 4
 Invoke-RestMethod -Headers $headers -Uri ('https://api.github.com/repos/'+$repo+'/actions/workflows/main.yml/dispatches') -Method Post -ContentType 'application/json' -Body $body | Out-Null
 Write-Host 'Requested the existing TestFlight build/upload workflow. Apple processing and device verification are still pending.'
 Write-Host 'https://github.com/rooom-talk/rooom-ios/actions/workflows/main.yml'
