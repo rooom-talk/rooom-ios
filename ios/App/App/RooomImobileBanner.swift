@@ -267,6 +267,8 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
     private let source: WKHTTPCookieStore
     private var generation = 0
     private var session: String?
+    private var syncing = false, pending = false
+    private var expiration: Timer?
     private var released = false
     private var ready = false
     static func page(_ url: URL?) -> Bool {
@@ -292,27 +294,40 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
     }
     func cookiesDidChange(in cookieStore: WKHTTPCookieStore) { synchronize() }
     private func synchronize() {
-        generation += 1; let ticket = generation
+        guard !released else { return }
+        if syncing { pending = true; return }
+        syncing = true
         source.getAllCookies { [weak self] cookies in
-            guard let self, !self.released, ticket == self.generation else { return }
+            guard let self, !self.released else { return }
             let cookie = cookies.first { $0.name == "__session" && $0.domain == Self.host && $0.path == "/" && $0.isSecure && $0.isHTTPOnly && ($0.expiresDate == nil || $0.expiresDate! > Date()) }
-            guard cookie?.value != self.session else { return }
-            self.session = cookie?.value; self.ready = false; self.view.isHidden = true; self.view.stopLoading()
+            guard cookie?.value != self.session else { self.finishSync(); return }
+            self.generation += 1; self.expiration?.invalidate()
+            self.ready = false; self.view.isHidden = true; self.view.stopLoading()
             let store = self.view.configuration.websiteDataStore.httpCookieStore
             store.getAllCookies { [weak self] old in
-                guard let self, !self.released, ticket == self.generation else { return }
+                guard let self, !self.released else { return }
                 let group = DispatchGroup()
                 for c in old { group.enter(); store.delete(c) { group.leave() } }
                 group.notify(queue: .main) { [weak self] in
-                    guard let self, !self.released, ticket == self.generation, let cookie else { return }
+                    guard let self, !self.released else { return }
+                    guard let cookie else { self.session = nil; self.finishSync(); return }
                     store.setCookie(cookie) { [weak self] in
-                        guard let self, !self.released, ticket == self.generation else { return }
+                        guard let self, !self.released else { return }
+                        self.session = cookie.value
+                        if let date = cookie.expiresDate {
+                            self.expiration = Timer.scheduledTimer(withTimeInterval: max(0.01, date.timeIntervalSinceNow), repeats: false) { [weak self] _ in self?.synchronize() }
+                        }
                         let url = URL(string: "https://\(Self.host)\(Self.path)")!
                         self.view.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+                        self.finishSync()
                     }
                 }
             }
         }
+    }
+    private func finishSync() {
+        syncing = false
+        if pending { pending = false; synchronize() }
     }
     func place(in shell: UIView, frame: CGRect) {
         view.frame = frame
@@ -325,13 +340,25 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         let ticket = generation
-        webView.evaluateJavaScript("document.documentElement.dataset.railReady === '1'") { [weak self] value, _ in
+        webView.callAsyncJavaScript("""
+          if(document.documentElement.dataset.railReady==='1')return true;
+          return await new Promise(resolve=>{
+            const done=()=>{clearTimeout(timer);removeEventListener('rooom:rail-ready',done);resolve(document.documentElement.dataset.railReady==='1');};
+            const timer=setTimeout(done,5000);addEventListener('rooom:rail-ready',done,{once:true});
+          });
+          """, arguments: [:], in: nil, in: .page) { [weak self] result in
             guard let self, !self.released, ticket == self.generation else { return }
-            self.ready = (value as? Bool) == true; self.view.isHidden = !self.ready
+            if case .success(let value) = result { self.ready = (value as? Bool) == true }
+            else { self.ready = false }
+            self.view.isHidden = !self.ready
         }
     }
+    private func failed() { generation += 1; ready = false; view.isHidden = true }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed() }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed() }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { failed() }
     func release() {
-        released = true; generation += 1; ready = false; session = nil
+        released = true; generation += 1; ready = false; session = nil; expiration?.invalidate()
         source.remove(self); view.stopLoading(); view.navigationDelegate = nil; view.removeFromSuperview()
     }
 }

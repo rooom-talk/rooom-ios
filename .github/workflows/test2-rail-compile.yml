@@ -19,6 +19,13 @@ jobs:
         with:
           ref: ${{ inputs.approved_sha || github.sha }}
           persist-credentials: false
+      - name: Verify explicitly selected candidate
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
       - uses: actions/checkout@v4
         with:
           repository: imobile/adnw-sdk-ios
