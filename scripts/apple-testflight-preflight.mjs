@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import {sign} from 'node:crypto';
+import fs from 'node:fs';
+const env=process.env;
+import {checkTest2Version} from './testflight-version-policy.mjs';
+const key=(env.APP_STORE_CONNECT_PRIVATE_KEY||'').replace(/\\n/g,'\n');
+assert.ok(key.includes('BEGIN PRIVATE KEY'),'STOP: App Store Connect private key unavailable');
+assert.ok(env.APP_STORE_CONNECT_KEY_ID && env.APP_STORE_CONNECT_ISSUER_ID,'STOP: App Store Connect key metadata unavailable');
+const base64=o=>Buffer.from(JSON.stringify(o)).toString('base64url');
+const issued=Math.floor(Date.now()/1000);
+const input=base64({alg:'ES256',kid:env.APP_STORE_CONNECT_KEY_ID,typ:'JWT'})+'.'+base64({iss:env.APP_STORE_CONNECT_ISSUER_ID,iat:issued,exp:issued+900,aud:'appstoreconnect-v1'});
+const signature=sign('sha256',Buffer.from(input),{key,dsaEncoding:'ieee-p1363'}).toString('base64url');
+const token=input+'.'+signature;
+async function api(path){
+  const res=await fetch('https://api.appstoreconnect.apple.com'+path,{headers:{Authorization:'Bearer '+token}});
+  if(!res.ok)throw Error('STOP: Apple build lookup HTTP '+res.status);
+  return res.json();
+}
+// App Store ID published by Apple for RoooM Talk, not an ad provider ID.
+// Read the exact app, then fail closed unless the response identifies our bundle.
+// An empty filtered /v1/apps result previously stopped this workflow unnecessarily.
+const expectedAppId='6800222762';
+const expectedBundleId='com.rooom.talk';
+const app=await api('/v1/apps/'+expectedAppId);
+assert.equal(String(app.data?.id),expectedAppId,'STOP: unexpected Apple App Store app ID');
+assert.equal(app.data?.attributes?.bundleId,expectedBundleId,
+  'STOP: Apple app does not match RoooM bundle ID');
+const appId=expectedAppId;
+if(env.TARGET_ENV==='test2'){const version=await checkTest2Version(api);if(env.GITHUB_ENV)fs.appendFileSync(env.GITHUB_ENV,'ROOOM_MARKETING_VERSION='+version+'\n');console.log('TEST2 fresh marketing version eligibility PASS: '+version);}
+if(process.argv.includes('--version-only')){assert.equal(env.TARGET_ENV,'test2');process.exit(0);}
+let link='/v1/apps/'+encodeURIComponent(appId)+'/builds?limit=200';
+let max=0, pages=0;
+while(link){
+  assert.ok(++pages<=30,'STOP: Apple build listing exceeds 30 pages; manual reconciliation needed');
+  const data=await api(link.startsWith('https:') ? new URL(link).pathname+new URL(link).search : link);
+  for(const b of data.data||[]){const v=Number(b.attributes?.version);if(Number.isSafeInteger(v))max=Math.max(max,v);}
+  link=data.links?.next||null;
+}
+const proposed=100000+Number(env.GITHUB_RUN_NUMBER);
+assert.ok(Number.isSafeInteger(proposed)&&proposed>max,'STOP: computed build number '+proposed+' is not greater than Apple latest '+max);
+fs.appendFileSync(env.GITHUB_ENV,'ROOOM_TESTFLIGHT_BUILD_NUMBER='+proposed+'\n');
+console.log('Apple build version preflight PASS: previous maximum '+max+', candidate '+proposed);
