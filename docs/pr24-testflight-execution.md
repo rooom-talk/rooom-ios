@@ -20,3 +20,7 @@ Apple references:
 Run79 /44918013122 uploaded1.6.2(100079) successfully at2026-11-21T15:17:14Z. Apple preflight saw previous maximum100077. The archive's actual Capacitor config is TEST2 and its binary includes TEST2 rail and PR24 presentation capability; code signing/export/upload all passed. No App Store release or Firebase/DB action occurred.
 
 The upload job's following GET-only status observation reached Apple's VALID build and beta-detail reads, then the build betaGroups endpoint returned403. That caused only the observation step to fail after upload. Do not rerun the build/upload job. The readback-only correction retains authoritative processing/internal-testing state while recording group metadata as null/forbidden-403. Other API errors and unknown internal states still reject. A canonical CHECK_TEST2_STATUS dispatch for exact build100079 reads the existing build; signing/upload jobs are skipped. Individual tester membership or group names are not inferred from that unavailable metadata.
+
+## Existing declaration reference (GET only)
+
+Build100079 is Apple VALID but its internal state is MISSING_EXPORT_COMPLIANCE. The status report also reads the exact prior100077 record's usesNonExemptEncryption value for operator comparison. It does not infer the answer or write an export declaration. App/marketing/build and original binary identity remain fixed; no rebuild/upload is part of this observation.
