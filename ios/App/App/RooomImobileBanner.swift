@@ -267,7 +267,8 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
     private let source: WKHTTPCookieStore
     private var generation = 0
     private var session: String?
-    private var syncing = false, pending = false
+    private var syncing = false, pending = false, needsLoad = false
+    private var sessionExpiry: Date?
     private var expiration: Timer?
     private var released = false
     private var ready = false
@@ -300,7 +301,7 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
         source.getAllCookies { [weak self] cookies in
             guard let self, !self.released else { return }
             let cookie = cookies.first { $0.name == "__session" && $0.domain == Self.host && $0.path == "/" && $0.isSecure && $0.isHTTPOnly && ($0.expiresDate == nil || $0.expiresDate! > Date()) }
-            guard cookie?.value != self.session else { self.finishSync(); return }
+            guard cookie?.value != self.session || cookie?.expiresDate != self.sessionExpiry else { self.finishSync(); return }
             self.generation += 1; self.expiration?.invalidate()
             self.ready = false; self.view.isHidden = true; self.view.stopLoading()
             let store = self.view.configuration.websiteDataStore.httpCookieStore
@@ -310,15 +311,14 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
                 for c in old { group.enter(); store.delete(c) { group.leave() } }
                 group.notify(queue: .main) { [weak self] in
                     guard let self, !self.released else { return }
-                    guard let cookie else { self.session = nil; self.finishSync(); return }
+                    guard let cookie else { self.session = nil; self.sessionExpiry = nil; self.needsLoad = false; self.finishSync(); return }
                     store.setCookie(cookie) { [weak self] in
                         guard let self, !self.released else { return }
-                        self.session = cookie.value
+                        self.session = cookie.value; self.sessionExpiry = cookie.expiresDate; self.needsLoad = true
                         if let date = cookie.expiresDate {
                             self.expiration = Timer.scheduledTimer(withTimeInterval: max(0.01, date.timeIntervalSinceNow), repeats: false) { [weak self] _ in self?.synchronize() }
                         }
-                        let url = URL(string: "https://\(Self.host)\(Self.path)")!
-                        self.view.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+
                         self.finishSync()
                     }
                 }
@@ -327,7 +327,12 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
     }
     private func finishSync() {
         syncing = false
-        if pending { pending = false; synchronize() }
+        if pending { pending = false; synchronize(); return }
+        if needsLoad && session != nil && !released {
+            needsLoad = false
+            let url = URL(string: "https://\(Self.host)\(Self.path)")!
+            view.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+        }
     }
     func place(in shell: UIView, frame: CGRect) {
         view.frame = frame
@@ -336,6 +341,12 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         let url = navigationAction.request.url
+        // Provider permissions remain Web-owned CSP. The shipped TEST2 page
+        // has frame-src 'none' and contains no providers; future HTTPS frames
+        // do not require a new Native inventory or SDK bridge.
+        if navigationAction.targetFrame?.isMainFrame == false {
+            decisionHandler(url?.scheme == "https" ? .allow : .cancel); return
+        }
         decisionHandler(navigationAction.targetFrame?.isMainFrame == true && url?.absoluteString == "https://\(Self.host)\(Self.path)" ? .allow : .cancel)
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

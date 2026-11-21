@@ -103,7 +103,7 @@ func evaluate(_ expression: String) -> Any? {
     web.evaluateJavaScript(expression) { result, error in value = result; failure = error; done = true }
     let deadline = Date().addingTimeInterval(5)
     while !done && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
-    require(done && failure == nil, "evaluateJavaScript failed: \(String(describing: failure))")
+    require(done && failure == nil, "evaluateJavaScript failed for \(expression): \(String(describing: failure))")
     return value
 }
 func attributesExpression() -> String {

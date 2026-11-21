@@ -7,6 +7,12 @@ on:
         description: "Exact 40-character merged release commit SHA"
         required: true
         type: string
+      target_environment:
+        description: Launch environment (TEST2 is internal testing only)
+        required: true
+        type: choice
+        options: [production, test2]
+        default: production
       confirmation:
         description: "Explicit test-only Apple upload, no App Store release"
         required: true
@@ -65,7 +71,12 @@ jobs:
       - name: Install verified TEST keyboard accessory controller
         run: npm install @capacitor/keyboard@8.0.6
 
+      - name: Prepare TEST2-only Capacitor settings
+        if: inputs.target_environment == 'test2'
+        run: node scripts/prepare-test2-rail.mjs
+
       - name: Prepare verified production Capacitor settings
+        if: inputs.target_environment != 'test2'
         run: |
           node --input-type=module <<'NODE'
           import fs from "node:fs";
@@ -94,6 +105,7 @@ jobs:
         run: node scripts/stage-imobile-official-sdk.mjs "$GITHUB_WORKSPACE/vendor-sdk"
 
       - name: Guard production identity and verified TEST native owners
+        if: inputs.target_environment != 'test2'
         run: |
           set -e
           grep -q 'RooomKeyboardContainerViewController' ios/App/App/SceneDelegate.swift
@@ -143,6 +155,22 @@ jobs:
           # All new APP placements are disabled by their production Web config.
           echo 'Verified TEST native keyboard, single Messaging owner and production signing identity'
 
+      - name: Guard TEST2 source and compile mode
+        if: inputs.target_environment == 'test2'
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import assert from 'node:assert/strict';
+          const c=JSON.parse(fs.readFileSync('capacitor.config.json'));
+          assert.equal(c.appId,'com.rooom.talk');
+          assert.equal(c.server.url,'https://rooom-test2.web.app/?rooom_native_generation=3');
+          assert.deepEqual(c.server.allowNavigation,['rooom-test2.web.app']);
+          assert.equal(c.ios.scrollEnabled,true);
+          assert.equal(c.plugins.Keyboard.resize,'none');
+          assert.ok(fs.readFileSync('ios/App/App/RooomImobileBanner.swift','utf8').includes('#if ROOOM_TEST2_RAIL'));
+          NODE
+          echo 'ROOOM_BUILD_CONDITIONS=$(inherited) ROOOM_IMOBILE_ADS ROOOM_TEST2_RAIL' >> "$GITHUB_ENV"
+          echo 'ROOOM_INTERNAL_ONLY=<key>testFlightInternalTestingOnly</key><true/>' >> "$GITHUB_ENV"
       - name: Verify new TestFlight build number against App Store Connect
         env:
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
@@ -246,6 +274,7 @@ jobs:
             APP_PROFILE="$PROFILE_UUID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             MARKETING_VERSION=1.6 \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS="${ROOOM_BUILD_CONDITIONS:-\$(inherited)}" \
             clean archive
 
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx '1.6'
@@ -261,6 +290,7 @@ jobs:
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
+              ${ROOOM_INTERNAL_ONLY:-}
               <key>method</key>
               <string>app-store-connect</string>
               <key>teamID</key>

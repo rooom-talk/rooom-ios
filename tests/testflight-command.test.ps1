@@ -11,7 +11,7 @@ function global:git {
 function global:Invoke-RestMethod {
     param($Headers,$Uri,$Method,$ContentType,$Body)
     if ($Method -eq 'Post') {
-        if ($Uri -notmatch '/actions/workflows/(main|ads-source-check|ads-native-compile)\.yml/dispatches$') { throw 'Unexpected write' }
+        if ($Uri -notmatch '/actions/workflows/(main|ads-source-check|ads-native-compile|test2-rail-compile)\.yml/dispatches$') { throw 'Unexpected write' }
         $record=$Body | ConvertFrom-Json
         $record | Add-Member NoteProperty uri $Uri
         $global:testflightFixture.posts+=$record
@@ -20,14 +20,16 @@ function global:Invoke-RestMethod {
     if ($Uri -match '/branches/') { return @{commit=@{sha=$(if($global:testflightFixture.fault -eq 'head'){'c'*40}else{$sha})}} }
     if ($Uri -match '/pulls/') { return @{merged=$true;merge_commit_sha=$sha;base=@{ref='release/ios-review-candidate-20261011'};head=@{sha=$head;repo=@{full_name='rooom-talk/rooom-ios'}}} }
     if ($Uri -match '/git/commits/') { return @{tree=@{sha=$(if($global:testflightFixture.fault -eq 'tree' -and $Uri.EndsWith($head)){'different'}else{'same'})}} }
-    if ($Uri -match '/contents/') { return @{sha=$(if($global:testflightFixture.fault -eq 'workflow'){'unexpected'}else{'6e61eefa9ef0e3d44c4d02d25e593e7f489c9e7d'})} }
+    if ($Uri -match '/contents/') { return @{sha=$(if($global:testflightFixture.fault -eq 'workflow'){'unexpected'}else{'433dbaa234a9eaca834c7e93caac95ff9e429f2e'})} }
     if ($Uri -match '/actions/runs\?') {
-        return @{workflow_runs=@('ads-source-check.yml','ads-native-compile.yml') | ForEach-Object { @{id=10;path='.github/workflows/'+$_;head_sha=$sha;status='completed';conclusion=$(if($global:testflightFixture.fault -eq 'checks'){'failure'}else{'success'})} }}
+        return @{workflow_runs=@('ads-source-check.yml','ads-native-compile.yml','test2-rail-compile.yml') | ForEach-Object { @{id=10;path='.github/workflows/'+$_;head_sha=$sha;status='completed';conclusion=$(if($global:testflightFixture.fault -eq 'checks'){'failure'}else{'success'})} }}
     }
     throw ('Unexpected request '+$Uri)
 }
 function global:Invoke-WebRequest {
     param([switch]$UseBasicParsing,$Uri,$Headers)
+    if ($Uri -match '/src/core/app-viewport-shell.css$') { return @{StatusCode=200;Content='--rooom-phone-full-canvas-ready:1'} }
+    if ($Uri -match '/src/features/ads/native-phone-ad-overlay.mjs$') { return @{StatusCode=200;Content="cap.phoneOverlay.surface === 'full-height-v2'"} }
     if ($Uri -notmatch '^https://rooom-talk.com/src/features/ads/(native-ipad-portrait-blank.mjs|native-ad-adapter.mjs|page-ad-runtime.mjs|ad-contract.mjs|verified-app-spots.mjs|monetization-config.mjs|ios-ipad-portrait-728.html)$') { throw 'Unexpected Web request' }
     return @{StatusCode=200;Content=$(if($global:testflightFixture.fault -eq 'web'){'legacy'}else{"reply.fixedLayoutReservation==='before-fill-v1'; export async function syncNativeInitialLayoutOff; syncNativeInitialLayoutOff(globalThis,monetizationConfig); Invalid isolated iPad Web banner; https://rooom-talk.com/src/features/ads/ios-ipad-portrait-728.html; ...(tabletPortraitWebBanner !== undefined; tabletPortraitBottom:false; tabletPortraitWebBanner:{version:1,url:IPAD_WEB_BANNER_URL}; RoooMAdSurface/1; asid:1951545"})}
 }
@@ -55,3 +57,10 @@ foreach($request in $global:testflightFixture.posts) {
     if ($request.uri -match '/main.yml/' -or $request.inputs.approved_sha -ne $sha -or $request.inputs.confirmation) { throw 'BuildOnly leaked an upload or lost the pinned SHA' }
 }
 Write-Host 'PASS: build-only uses exact SHA, never dispatches upload. All I/O mocked.'
+
+$global:testflightFixture.posts=@()
+& $entry -ApprovedSha $sha -PullRequest 21 -Test2Rail -CheckOnly
+if ($global:testflightFixture.posts.Count -ne 0) { throw 'TEST2 CheckOnly dispatched' }
+& $entry -ApprovedSha $sha -PullRequest 21 -Test2Rail
+if ($global:testflightFixture.posts.Count -ne 1 -or $global:testflightFixture.posts[0].inputs.target_environment -ne 'test2') { throw 'TEST2 dispatch lost environment' }
+Write-Host 'PASS: TEST2 exact environment and zero-write CheckOnly (mocked).'
