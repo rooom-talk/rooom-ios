@@ -42,9 +42,11 @@ jobs:
       - name: Verify exact approved source and canonical branch
         env:
           APPROVED_SHA: ${{ inputs.approved_sha }}
+          TARGET_ENV: ${{ inputs.target_environment || 'production' }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          case "$TARGET_ENV" in production|test2) ;; *) echo "STOP: unknown target environment"; exit 1;; esac
           [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'STOP: 40-character commit SHA required'; exit 1; }
           test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
           CURRENT="$(gh api repos/rooom-talk/rooom-ios/branches/release/ios-review-candidate-20261011 --jq .commit.sha)"

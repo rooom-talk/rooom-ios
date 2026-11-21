@@ -3,7 +3,9 @@ param(
     [Parameter(Mandatory=$true)][int]$PullRequest,
     [switch]$CheckOnly,
     [switch]$BuildOnly,
-    [switch]$Test2Rail
+    [switch]$Test2Rail,
+    [string]$WebRoot,
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$WebSha
 )
 $ErrorActionPreference = 'Stop'
 $repo = 'rooom-talk/rooom-ios'
@@ -31,7 +33,7 @@ $merged = Read-GitHub ('git/commits/'+$ApprovedSha)
 $tested = Read-GitHub ('git/commits/'+$pr.head.sha)
 if ($merged.tree.sha -ne $tested.tree.sha) { throw 'Merged content differs from the tested PR; inspect before upload' }
 $workflow = Read-GitHub ('contents/.github/workflows/main.yml?ref='+$ApprovedSha)
-if ($workflow.sha -ne 'e7778c886130ab8e05d9fb88bec06263a97271e2') { throw 'TestFlight workflow differs from the audited manual-only upload path' }
+if ($workflow.sha -ne '788af4fc76d3ece8ff556478155edd610cdc3965') { throw 'TestFlight workflow differs from the audited manual-only upload path' }
 if ($BuildOnly) {
     if ($CheckOnly) { Write-Host 'BUILD PREFLIGHT PASS: no workflow dispatched, no Native build or upload.'; return }
     foreach ($name in @('ads-source-check.yml','ads-native-compile.yml') + $(if($Test2Rail){@('test2-rail-compile.yml')}else{@()})) {
@@ -51,6 +53,13 @@ if (@($runs.workflow_runs).Count -eq 0) {
 foreach ($path in @('.github/workflows/ads-source-check.yml','.github/workflows/ads-native-compile.yml') + $(if($Test2Rail){@('.github/workflows/test2-rail-compile.yml')}else{@()})) {
     $run = @($runs.workflow_runs | Where-Object { $_.path -eq $path -and $_.head_sha -eq $checkSha } | Sort-Object id -Descending | Select-Object -First 1)
     if ($run.Count -ne 1 -or $run[0].status -ne 'completed' -or $run[0].conclusion -ne 'success') { throw ('Required candidate verification is not successful: '+$path) }
+}
+if ($Test2Rail) {
+    if (!$WebRoot -or !$WebSha) { throw 'TEST2 requires the reviewed WebRoot and WebSha; deploy and verify TEST2 Web assets first' }
+    $verify=Join-Path $WebRoot 'scripts/check-test2-rail-live.cjs'
+    if (!(Test-Path -LiteralPath $verify -PathType Leaf)) { throw 'TEST2 live asset checker missing' }
+    & node --use-system-ca $verify $WebSha
+    if ($LASTEXITCODE -ne 0) { throw 'TEST2 Web assets or entry gate differ; no upload requested' }
 }
 if (!$Test2Rail) {
 $webChecks=@{

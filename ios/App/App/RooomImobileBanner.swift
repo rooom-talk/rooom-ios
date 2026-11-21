@@ -283,7 +283,7 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.userContentController = WKUserContentController()
-        config.applicationNameForUserAgent = "RoooMTest2Rail/1"
+        config.applicationNameForUserAgent = "RoooMTest2Rail/1 Build/" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0")
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
         view = WKWebView(frame: frame, configuration: config)
         super.init()
