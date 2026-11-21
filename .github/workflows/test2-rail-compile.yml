@@ -1,7 +1,7 @@
 name: TEST2 Web-managed rail unsigned build
 on:
   pull_request:
-    paths: ['ios/App/App/RooomImobileBanner.swift', 'scripts/prepare-test2-rail.mjs', '.github/workflows/test2-rail-compile.yml']
+    paths: ['ios/App/App/RooomImobileBanner.swift', 'scripts/prepare-test2-rail.mjs', 'tests/test2-rail-races.mjs', '.github/workflows/test2-rail-compile.yml']
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -42,6 +42,8 @@ jobs:
           npm run build
           npx cap sync ios
           node scripts/stage-imobile-official-sdk.mjs "$GITHUB_WORKSPACE/vendor-sdk"
+      - name: Actual Swift coordinator race tests with isolated transport doubles
+        run: node tests/test2-rail-races.mjs
       - name: Compile simulator and device without signing
         run: |
           set -euo pipefail

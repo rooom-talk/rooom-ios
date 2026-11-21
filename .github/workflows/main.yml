@@ -263,6 +263,8 @@ jobs:
           cd ios/App
           BUILD_NUMBER="${ROOOM_TESTFLIGHT_BUILD_NUMBER:?Apple build preflight missing}"
           echo "Review candidate build number: $BUILD_NUMBER"
+          EXTRA_FLAGS=()
+          if [ -n "${ROOOM_BUILD_CONDITIONS:-}" ]; then EXTRA_FLAGS+=("SWIFT_ACTIVE_COMPILATION_CONDITIONS=$ROOOM_BUILD_CONDITIONS"); fi
 
           xcodebuild \
             -project App.xcodeproj \
@@ -274,7 +276,7 @@ jobs:
             APP_PROFILE="$PROFILE_UUID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             MARKETING_VERSION=1.6 \
-            SWIFT_ACTIVE_COMPILATION_CONDITIONS="${ROOOM_BUILD_CONDITIONS:-\$(inherited)}" \
+            "${EXTRA_FLAGS[@]}" \
             clean archive
 
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/Info.plist" | grep -Fx '1.6'

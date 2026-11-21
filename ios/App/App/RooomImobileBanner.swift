@@ -269,6 +269,7 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
     private var session: String?
     private var syncing = false, pending = false, needsLoad = false
     private var sessionExpiry: Date?
+    private var activeNavigation: WKNavigation?
     private var expiration: Timer?
     private var released = false
     private var ready = false
@@ -303,7 +304,7 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
             let cookie = cookies.first { $0.name == "__session" && $0.domain == Self.host && $0.path == "/" && $0.isSecure && $0.isHTTPOnly && ($0.expiresDate == nil || $0.expiresDate! > Date()) }
             guard cookie?.value != self.session || cookie?.expiresDate != self.sessionExpiry else { self.finishSync(); return }
             self.generation += 1; self.expiration?.invalidate()
-            self.ready = false; self.view.isHidden = true; self.view.stopLoading()
+            self.ready = false; self.view.isHidden = true; self.activeNavigation = nil; self.view.stopLoading()
             let store = self.view.configuration.websiteDataStore.httpCookieStore
             store.getAllCookies { [weak self] old in
                 guard let self, !self.released else { return }
@@ -331,7 +332,7 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
         if needsLoad && session != nil && !released {
             needsLoad = false
             let url = URL(string: "https://\(Self.host)\(Self.path)")!
-            view.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+            activeNavigation = view.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
         }
     }
     func place(in shell: UIView, frame: CGRect) {
@@ -350,6 +351,7 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
         decisionHandler(navigationAction.targetFrame?.isMainFrame == true && url?.absoluteString == "https://\(Self.host)\(Self.path)" ? .allow : .cancel)
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let navigation, navigation === activeNavigation else { return }
         let ticket = generation
         webView.callAsyncJavaScript("""
           if(document.documentElement.dataset.railReady==='1')return true;
@@ -364,12 +366,12 @@ private final class RooomTestRail: NSObject, WKNavigationDelegate, WKHTTPCookieS
             self.view.isHidden = !self.ready
         }
     }
-    private func failed() { generation += 1; ready = false; view.isHidden = true }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed() }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed() }
+    private func failed() { generation += 1; activeNavigation = nil; ready = false; view.isHidden = true }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { if let navigation, navigation === activeNavigation { failed() } }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { if let navigation, navigation === activeNavigation { failed() } }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { failed() }
     func release() {
-        released = true; generation += 1; ready = false; session = nil; expiration?.invalidate()
+        released = true; generation += 1; ready = false; session = nil; activeNavigation = nil; expiration?.invalidate()
         source.remove(self); view.stopLoading(); view.navigationDelegate = nil; view.removeFromSuperview()
     }
 }
