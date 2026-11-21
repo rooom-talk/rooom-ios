@@ -75,6 +75,7 @@ test('signing uses explicit manual dispatch, reviewed PR SHA, and never uploads 
 
 test('iOS 1.6 TestFlight upload uses the existing Mac workflow, manual only and immutable release commit',()=>{
  const ci=fs.readFileSync('.github/workflows/main.yml','utf8');
+ const apple=fs.readFileSync('scripts/apple-testflight-preflight.mjs','utf8');
  const capacitor=JSON.parse(fs.readFileSync('capacitor.config.json','utf8'));
  assert.equal(capacitor.server.url,'https://rooom-talk.com/?rooom_native_generation=3');
  assert.match(ci,/on:\n  workflow_dispatch:/);
@@ -85,14 +86,14 @@ test('iOS 1.6 TestFlight upload uses the existing Mac workflow, manual only and 
  assert.match(ci,/test "\$CURRENT" = "\$APPROVED_SHA"/);
  assert.match(ci,/node scripts\/stage-imobile-official-sdk\.mjs/);
  assert.match(ci,/ROOOM_TESTFLIGHT_BUILD_NUMBER/);
- assert.match(ci,/Apple build lookup HTTP/);
- assert.match(ci,/const expectedAppId='6800222762';/);
- assert.match(ci,/const expectedBundleId='com\.rooom\.talk';/);
- assert.match(ci,/app\.data\?\.attributes\?\.bundleId/);
- assert.match(ci,/STOP: Apple app does not match RoooM bundle ID/);
+ assert.match(apple,/Apple build lookup HTTP/);
+ assert.match(apple,/const expectedAppId='6800222762';/);
+ assert.match(apple,/const expectedBundleId='com\.rooom\.talk';/);
+ assert.match(apple,/app\.data\?\.attributes\?\.bundleId/);
+ assert.match(apple,/STOP: Apple app does not match RoooM bundle ID/);
  assert.doesNotMatch(ci,/\/v1\/apps\?filter/);
- assert.match(ci,/\/v1\/apps\/.*\/builds\?limit=200/);
- assert.match(ci,/MARKETING_VERSION=1\.6/);
+ assert.match(apple,/\/v1\/apps\/.*\/builds\?limit=200/);
+ assert(ci.includes('MARKETING_VERSION="${ROOOM_MARKETING_VERSION:-1.6}"'));
  assert.match(ci,/rooom_native_generation=3/);
  assert.match(ci,/private var config = RooomAdConfig\.off/);
  assert.match(ci,/xcrun altool/);

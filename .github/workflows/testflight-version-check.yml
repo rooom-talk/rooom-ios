@@ -1,0 +1,23 @@
+name: TEST2 Apple version eligibility (read only)
+on:
+  pull_request:
+    paths:
+      - 'scripts/*testflight*'
+      - '.github/workflows/main.yml'
+      - '.github/workflows/testflight-version-check.yml'
+      - 'tests/testflight-version.test.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  version:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/testflight-version.test.mjs
