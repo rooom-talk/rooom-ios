@@ -97,7 +97,8 @@ test('iOS 1.6 TestFlight upload uses the existing Mac workflow, manual only and 
  assert.match(ci,/rooom_native_generation=3/);
  assert.match(ci,/private var config = RooomAdConfig\.off/);
  assert.match(ci,/xcrun altool/);
- assert.doesNotMatch(ci,/actions\/upload-artifact@/);
+ assert.match(ci,/name: test2-apple-status/);
+ assert.doesNotMatch(ci,/path:.*(?:\.ipa|\.xcarchive|\/export)/);
  assert.doesNotMatch(ci,/firebase deploy|fastlane deliver|submit-for-review/);
 });
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-export const test2Version='1.6.1';
+export const test2Version='1.6.2';
 export function compareVersion(a,b){
  const parse=v=>{assert.match(v,/^\d+(\.\d+){0,2}$/,'Invalid Apple version');return v.split('.').map(Number);};
  const x=parse(a),y=parse(b);for(let i=0;i<3;i++){const d=(x[i]||0)-(y[i]||0);if(d)return Math.sign(d);}return 0;

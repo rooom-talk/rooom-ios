@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {sign} from 'node:crypto';
 import fs from 'node:fs';
 const env=process.env;
-import {checkTest2Version} from './testflight-version-policy.mjs';
+import {checkTest2Version,test2Version} from './testflight-version-policy.mjs';
 const key=(env.APP_STORE_CONNECT_PRIVATE_KEY||'').replace(/\\n/g,'\n');
 assert.ok(key.includes('BEGIN PRIVATE KEY'),'STOP: App Store Connect private key unavailable');
 assert.ok(env.APP_STORE_CONNECT_KEY_ID && env.APP_STORE_CONNECT_ISSUER_ID,'STOP: App Store Connect key metadata unavailable');
@@ -26,6 +26,19 @@ assert.equal(String(app.data?.id),expectedAppId,'STOP: unexpected Apple App Stor
 assert.equal(app.data?.attributes?.bundleId,expectedBundleId,
   'STOP: Apple app does not match RoooM bundle ID');
 const appId=expectedAppId;
+if(process.argv.includes('--status-only')||process.argv.includes('--status-wait')){
+ assert.equal(env.TARGET_ENV,'test2','Status mode is TEST2 only');
+ const {readTest2BuildStatus}=await import('./testflight-status-policy.mjs');
+ const wait=process.argv.includes('--status-wait');let result;
+ for(let attempt=0;attempt<(wait?24:1);attempt++){
+  result=await readTest2BuildStatus(api,{version:env.ROOOM_MARKETING_VERSION||test2Version,build:env.ROOOM_TESTFLIGHT_BUILD_NUMBER});
+  console.log('APPLE TEST2 STATUS '+JSON.stringify(result));
+  if(env.ROOOM_APPLE_STATUS_REPORT)fs.writeFileSync(env.ROOOM_APPLE_STATUS_REPORT,JSON.stringify(result,null,2)+'\n');
+  if(result.complete||!wait)break;await new Promise(resolve=>setTimeout(resolve,20000));
+ }
+ assert(!['FAILED','INVALID'].includes(result.processingState),'Apple processing rejected uploaded build');
+ process.exit(0);
+}
 if(env.TARGET_ENV==='test2'){const version=await checkTest2Version(api);if(env.GITHUB_ENV)fs.appendFileSync(env.GITHUB_ENV,'ROOOM_MARKETING_VERSION='+version+'\n');console.log('TEST2 fresh marketing version eligibility PASS: '+version);}
 if(process.argv.includes('--version-only')){assert.equal(env.TARGET_ENV,'test2');process.exit(0);}
 let link='/v1/apps/'+encodeURIComponent(appId)+'/builds?limit=200';

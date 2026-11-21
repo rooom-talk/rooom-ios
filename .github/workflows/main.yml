@@ -17,8 +17,13 @@ on:
         description: "Explicit test-only Apple upload, no App Store release"
         required: true
         type: choice
-        options: [DO_NOT_UPLOAD, CHECK_TEST2_VERSION, UPLOAD_TESTFLIGHT]
+        options: [DO_NOT_UPLOAD, CHECK_TEST2_VERSION, CHECK_TEST2_STATUS, UPLOAD_TESTFLIGHT]
         default: DO_NOT_UPLOAD
+      test2_build:
+        description: Exact TEST2 build for read-only Apple status (no build/upload)
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -29,7 +34,7 @@ concurrency:
 
 jobs:
   version-only:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/release/ios-review-candidate-20261011' && inputs.confirmation == 'CHECK_TEST2_VERSION' && inputs.target_environment == 'test2'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/release/ios-review-candidate-20261011' && (inputs.confirmation == 'CHECK_TEST2_VERSION' || inputs.confirmation == 'CHECK_TEST2_STATUS') && inputs.target_environment == 'test2'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -49,12 +54,29 @@ jobs:
         with:
           node-version: 22
       - name: Read Apple version eligibility only
+        if: inputs.confirmation == 'CHECK_TEST2_VERSION'
         env:
           TARGET_ENV: test2
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: node scripts/apple-testflight-preflight.mjs --version-only
+      - name: Read exact TEST2 Apple processing and internal-testing status
+        if: inputs.confirmation == 'CHECK_TEST2_STATUS'
+        env:
+          TARGET_ENV: test2
+          ROOOM_TESTFLIGHT_BUILD_NUMBER: ${{ inputs.test2_build }}
+          ROOOM_APPLE_STATUS_REPORT: ${{ runner.temp }}/apple-test2-status.json
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: node scripts/apple-testflight-preflight.mjs --status-only
+      - uses: actions/upload-artifact@v4
+        if: inputs.confirmation == 'CHECK_TEST2_STATUS'
+        with:
+          name: test2-apple-status
+          path: ${{ runner.temp }}/apple-test2-status.json
+          if-no-files-found: error
   build-ios:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/release/ios-review-candidate-20261011' && inputs.confirmation == 'UPLOAD_TESTFLIGHT'
     runs-on: macos-latest
@@ -275,6 +297,10 @@ jobs:
           codesign --verify --deep --strict "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app"
           test -f "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app/embedded.mobileprovision"
 
+      - name: Verify archived TEST2 endpoint, version and PR24 presentation mode
+        if: inputs.target_environment == 'test2'
+        run: node scripts/check-test2-archive.mjs "$RUNNER_TEMP/RoooM.xcarchive/Products/Applications/App.app"
+
       - name: Create ExportOptions.plist
         run: |
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
@@ -338,6 +364,22 @@ jobs:
             --file "$IPA_PATH" \
             --apiKey "$APP_STORE_CONNECT_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+
+      - name: Observe Apple processing and internal tester availability (GET only)
+        if: inputs.target_environment == 'test2'
+        env:
+          TARGET_ENV: test2
+          ROOOM_APPLE_STATUS_REPORT: ${{ runner.temp }}/apple-test2-status.json
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: node scripts/apple-testflight-preflight.mjs --status-wait
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.target_environment == 'test2'
+        with:
+          name: test2-apple-status
+          path: ${{ runner.temp }}/apple-test2-status.json
+          if-no-files-found: warn
 
       - name: Explicit release boundary
         run: |
