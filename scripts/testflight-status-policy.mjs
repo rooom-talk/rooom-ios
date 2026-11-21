@@ -12,9 +12,9 @@ export async function readTest2BuildStatus(api,{version,build}){
  const processingState=b.attributes.processingState;assert(['PROCESSING','VALID','FAILED','INVALID'].includes(processingState),'Unexpected Apple processing state');
  if(processingState!=='VALID')return {version,build:String(build),found:true,processingState,expired:!!b.attributes.expired,complete:['FAILED','INVALID'].includes(processingState)};
  const detail=included.find(x=>x.type==='buildBetaDetails'&&x.id===b.relationships?.buildBetaDetail?.data?.id)??(await api('/v1/builds/'+id+'/buildBetaDetail')).data;
- const groups=await api('/v1/builds/'+id+'/betaGroups?limit=200');assert(Array.isArray(groups.data));
- assert(!groups.links?.next,'Internal group listing needs pagination review');
- const internalGroups=groups.data.filter(g=>g.attributes?.isInternalGroup===true);
- const state=detail.attributes.internalBuildState;
- return {version,build:String(build),found:true,processingState,expired:!!b.attributes.expired,buildAudienceType:b.attributes.buildAudienceType??null,internalBuildState:state,internalGroupCount:internalGroups.length,availableToInternalTesters:state==='IN_BETA_TESTING'&&!b.attributes.expired,readyForInternalTesting:['IN_BETA_TESTING','READY_FOR_BETA_TESTING'].includes(state)&&!b.attributes.expired,complete:state!=='PROCESSING'};
+ let internalGroupCount=null,internalGroupRead='unverified';
+ try{const groups=await api('/v1/builds/'+id+'/betaGroups?limit=200');assert(Array.isArray(groups.data));assert(!groups.links?.next,'Internal group listing needs pagination review');internalGroupCount=groups.data.filter(g=>g.attributes?.isInternalGroup===true).length;internalGroupRead='verified';}
+ catch(error){if(error.status!==403)throw error;internalGroupRead='forbidden-403';}
+ const state=detail.attributes.internalBuildState;assert(['PROCESSING','PROCESSING_EXCEPTION','MISSING_EXPORT_COMPLIANCE','READY_FOR_BETA_TESTING','IN_BETA_TESTING','EXPIRED','IN_EXPORT_COMPLIANCE_REVIEW'].includes(state),'Unknown internal testing state');
+ return {version,build:String(build),found:true,processingState,expired:!!b.attributes.expired,buildAudienceType:b.attributes.buildAudienceType??null,internalBuildState:state,internalGroupCount,internalGroupRead,availableToInternalTesters:state==='IN_BETA_TESTING'&&!b.attributes.expired,readyForInternalTesting:['IN_BETA_TESTING','READY_FOR_BETA_TESTING'].includes(state)&&!b.attributes.expired,complete:state!=='PROCESSING'};
 }

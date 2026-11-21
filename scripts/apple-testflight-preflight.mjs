@@ -13,7 +13,7 @@ const signature=sign('sha256',Buffer.from(input),{key,dsaEncoding:'ieee-p1363'})
 const token=input+'.'+signature;
 async function api(path){
   const res=await fetch('https://api.appstoreconnect.apple.com'+path,{headers:{Authorization:'Bearer '+token}});
-  if(!res.ok)throw Error('STOP: Apple build lookup HTTP '+res.status);
+  if(!res.ok){const error=Error('STOP: Apple build lookup HTTP '+res.status);error.status=res.status;throw error;}
   return res.json();
 }
 // App Store ID published by Apple for RoooM Talk, not an ad provider ID.
