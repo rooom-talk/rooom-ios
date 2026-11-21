@@ -24,7 +24,7 @@ function global:Invoke-RestMethod {
     if ($Uri -match '/branches/') { return @{commit=@{sha=$(if($global:testflightFixture.fault -eq 'head'){'c'*40}else{$sha})}} }
     if ($Uri -match '/pulls/') { return @{merged=$true;merge_commit_sha=$sha;base=@{ref='release/ios-review-candidate-20261011'};head=@{sha=$head;repo=@{full_name='rooom-talk/rooom-ios'}}} }
     if ($Uri -match '/git/commits/') { return @{tree=@{sha=$(if($global:testflightFixture.fault -eq 'tree' -and $Uri.EndsWith($head)){'different'}else{'same'})}} }
-    if ($Uri -match '/contents/') { return @{sha=$(if($global:testflightFixture.fault -eq 'workflow'){'unexpected'}else{'ea7130fd0979fb9257e0dd5389ef4b647f158d4b'})} }
+    if ($Uri -match '/contents/') { return @{sha=$(if($global:testflightFixture.fault -eq 'workflow'){'unexpected'}else{'81cfc5ded40b4768ce4db2d7951815a277852b0f'})} }
     if ($Uri -match '/actions/runs\?') {
         return @{workflow_runs=@('ads-source-check.yml','ads-native-compile.yml','test2-rail-compile.yml') | ForEach-Object { @{id=10;path='.github/workflows/'+$_;head_sha=$sha;status='completed';conclusion=$(if($global:testflightFixture.fault -eq 'checks'){'failure'}else{'success'})} }}
     }

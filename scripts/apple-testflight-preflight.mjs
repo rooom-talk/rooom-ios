@@ -26,6 +26,26 @@ assert.equal(String(app.data?.id),expectedAppId,'STOP: unexpected Apple App Stor
 assert.equal(app.data?.attributes?.bundleId,expectedBundleId,
   'STOP: Apple app does not match RoooM bundle ID');
 const appId=expectedAppId;
+if(process.argv.includes('--apply-test2-export')){
+ assert.equal(env.TARGET_ENV,'test2');assert.equal(env.ROOOM_TESTFLIGHT_BUILD_NUMBER,'100079');
+ const {applyApprovedDeclaration,declarationApproval}=await import('./test2-export-declaration.mjs');
+ assert.equal(env.ROOOM_TEST2_EXPORT_APPROVAL,declarationApproval);
+ const patch=async(id,body)=>{
+  assert.match(id,/^[A-Za-z0-9-]{1,128}$/);assert.deepEqual(body,{data:{type:'builds',id,attributes:{usesNonExemptEncryption:false}}});
+  const res=await fetch('https://api.appstoreconnect.apple.com/v1/builds/'+encodeURIComponent(id),{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!res.ok){const error=Error('Apple exact TEST2 declaration PATCH HTTP '+res.status);error.status=res.status;throw error;}
+ };
+ const operation=await applyApprovedDeclaration(api,patch,{environment:env.TARGET_ENV,build:env.ROOOM_TESTFLIGHT_BUILD_NUMBER,approval:env.ROOOM_TEST2_EXPORT_APPROVAL,mode:'apply'});
+ console.log('APPLE APPROVED TEST2 DECLARATION '+JSON.stringify(operation));
+ const {readTest2BuildStatus}=await import('./testflight-status-policy.mjs');let status;
+ for(let attempt=0;attempt<12;attempt++){
+  status=await readTest2BuildStatus(api,{version:test2Version,build:'100079'});console.log('APPLE TEST2 STATUS '+JSON.stringify(status));
+  if(env.ROOOM_APPLE_STATUS_REPORT)fs.writeFileSync(env.ROOOM_APPLE_STATUS_REPORT,JSON.stringify({...status,declarationOperation:operation},null,2)+'\n');
+  if(status.availableToInternalTesters||!['PROCESSING','MISSING_EXPORT_COMPLIANCE','READY_FOR_BETA_TESTING'].includes(status.internalBuildState))break;
+  if(attempt<11)await new Promise(resolve=>setTimeout(resolve,10000));
+ }
+ process.exit(0);
+}
 if(process.argv.includes('--status-only')||process.argv.includes('--status-wait')){
  assert.equal(env.TARGET_ENV,'test2','Status mode is TEST2 only');
  const {readTest2BuildStatus}=await import('./testflight-status-policy.mjs');

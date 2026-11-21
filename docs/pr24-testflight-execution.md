@@ -24,3 +24,11 @@ The upload job's following GET-only status observation reached Apple's VALID bui
 ## Existing declaration reference (GET only)
 
 Build100079 is Apple VALID but its internal state is MISSING_EXPORT_COMPLIANCE. The status report also reads the exact prior100077 record's usesNonExemptEncryption value for operator comparison. It does not infer the answer or write an export declaration. App/marketing/build and original binary identity remain fixed; no rebuild/upload is part of this observation.
+
+## TN-approved declaration for existing build100079
+
+TN explicitly approved reusing100077's false declaration for100079 after confirming encryption use is unchanged. The comparison found only the PR24 advertisement-presentation change in Native code; iOS/public/Capacitor/dependency and SDK changes are absent beyond that approved product. No encryption implementation/import was added.
+
+The manual APPLY_TEST2_EXPORT_100079 mode targets only existing app6800222762/com.rooom.talk, IOS1.6.2/build100079, VALID/INTERNAL_ONLY/non-expired. It requires the live1000771.6.1 reference value to remain false and accepts only current null/MISSING_EXPORT_COMPLIANCE or already-false. It checks again immediately before its one-field PATCH, verifies after by GET, and skips an already-applied answer. Other build/environment, another answer, stale identity or inconsistent state stops. Original uploaded Native product trees/blobs are fixed and checked before this metadata operation. Apple does not supply an atomic compare-and-swap here; no claim is made about an unseen simultaneous external update after the final GET.
+
+This operation changes only usesNonExemptEncryption:false on100079. It cannot run the UPLOAD_TESTFLIGHT build job and does not change App Store release, previous build, tester identity, Firebase or DB. No signing or rebuild is needed. Repository commits use [skip ci] to honor the no-rebuild instruction; relevant pure regression tests, strict workflow structure checks, PowerShell entry mocks and independent audit are still performed, followed by the explicit metadata-only action. Apple state is read afterward; READY/MISSING/group403 is not called confirmed installation for TN.
