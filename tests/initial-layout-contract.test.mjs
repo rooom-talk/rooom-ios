@@ -4,15 +4,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const swift=fs.readFileSync('ios/App/App/RooomImobileBanner.swift','utf8');
 const scene=fs.readFileSync('ios/App/App/SceneDelegate.swift','utf8');
-test('initial geometry never grants permission to start SDK requests',()=>{
+test('initial geometry remains denied until Web presentation commits',()=>{
  assert.match(swift,/private var config = RooomAdConfig.off/);
  assert.match(swift,/releaseCreatives\(\); config = \.off; layout\(\)/);
- assert.match(swift,/if device == "tablet" \{\s*let ready = Set\(entries\.values\.filter/);
+ assert.match(swift,/guard presentation.allowed else \{ hideAll\(\); setReservation\(RooomAdInsets\(\)\); return \}/);
+ assert.match(swift,/guard presentation.allowed && presentation.committed else/);
  assert.match(swift,/setReservation\(RooomAdPolicy.fixedLayout\(config: initialLayout,/);
  assert.match(swift,/let desired = RooomAdPolicy.fixedLayout\(config: config,/);
  assert.ok(swift.indexOf('setReservation(RooomAdPolicy.fixedLayout(config: initialLayout')<swift.indexOf('let desired = RooomAdPolicy.fixedLayout(config: config'));
  const phone=swift.slice(swift.indexOf('private func phoneReservedInsets'),swift.indexOf('func layout()'));
- assert.match(phone,/!entry.failed && !entry.released/);
+ assert.match(phone,/readyKeys: nil/);
  assert.match(phone,/fixedLayout\(config: initialLayout,/);
  assert.doesNotMatch(phone,/entry\(|showBanner|start\(/);
 });

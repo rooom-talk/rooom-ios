@@ -42,6 +42,17 @@ jobs:
           npm run build
           npx cap sync ios
           node scripts/stage-imobile-official-sdk.mjs "$GITHUB_WORKSPACE/vendor-sdk"
+      - name: Actual Web presentation permission state
+        run: node tests/web-presentation-permission.mjs
+      - name: Offline unsigned UIKit and WK geometry probe
+        env:
+          ROOOM_PRESENTATION_PROBE_REPORT: ${{ runner.temp }}/presentation-probe-report.json
+        run: node tests/web-presentation-uikit-probe.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-offline-presentation-probe
+          path: ${{ runner.temp }}/presentation-probe-report.json
+          if-no-files-found: error
       - name: Actual Swift coordinator race tests with isolated transport doubles
         run: node tests/test2-rail-races.mjs
       - name: Compile simulator and device without signing
