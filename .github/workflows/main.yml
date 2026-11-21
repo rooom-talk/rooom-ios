@@ -17,7 +17,7 @@ on:
         description: "Explicit test-only Apple upload, no App Store release"
         required: true
         type: choice
-        options: [DO_NOT_UPLOAD, UPLOAD_TESTFLIGHT]
+        options: [DO_NOT_UPLOAD, CHECK_TEST2_VERSION, UPLOAD_TESTFLIGHT]
         default: DO_NOT_UPLOAD
 
 permissions:
@@ -28,6 +28,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  version-only:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/release/ios-review-candidate-20261011' && inputs.confirmation == 'CHECK_TEST2_VERSION' && inputs.target_environment == 'test2'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+          persist-credentials: false
+      - name: Verify exact canonical candidate before Apple reads
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          test "$(gh api repos/rooom-talk/rooom-ios/branches/release/ios-review-candidate-20261011 --jq .commit.sha)" = "$APPROVED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Read Apple version eligibility only
+        env:
+          TARGET_ENV: test2
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: node scripts/apple-testflight-preflight.mjs --version-only
   build-ios:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/release/ios-review-candidate-20261011' && inputs.confirmation == 'UPLOAD_TESTFLIGHT'
     runs-on: macos-latest
