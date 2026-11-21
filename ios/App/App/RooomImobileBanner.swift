@@ -670,6 +670,7 @@ final class RooomMonetization {
     private func releaseCreatives() {
 #if ROOOM_TEST2_RAIL
         testRail?.release(); testRail = nil
+        test2RuntimeLabel.isHidden = true
 #endif
         tabletWebAd?.release(); tabletWebAd = nil
         let old = entries; entries.removeAll(); for entry in old.values { entry.release() }
@@ -689,6 +690,7 @@ final class RooomMonetization {
     private func hideAll() {
 #if ROOOM_TEST2_RAIL
         testRail?.release(); testRail = nil
+        test2RuntimeLabel.isHidden = true
 #endif
         tabletWebAd?.release(); tabletWebAd = nil
         for e in entries.values { e.view.isHidden = true }
@@ -763,6 +765,17 @@ final class RooomMonetization {
         // URL. After navigation starts, always use the real page URL.
         let pageURL = web.url ?? controller?.bridge?.config.serverURL
 #if ROOOM_TEST2_RAIL
+        // Test builds never enter the production SDK lifecycle, even on navigation.
+        guard device == "tablet", RooomTestRail.page(pageURL), !keyboard,
+              UIApplication.shared.applicationState == .active,
+              shell.bounds.width > shell.bounds.height else {
+            hideAll(); setReservation(RooomAdInsets()); return
+        }
+        let safe = shell.safeAreaInsets
+        let railWidth = RooomAdPresentation.standard.railWidth
+        guard shell.bounds.width - safe.left - safe.right - railWidth >= 320 else {
+            hideAll(); setReservation(RooomAdInsets()); return
+        }
         // Read-only identity evidence in the existing top rail margin; never an ad.
         // Kept visible even when entry-cookie readiness hides the dummy document.
         let testBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
@@ -777,17 +790,6 @@ final class RooomMonetization {
             width: min(316, shell.bounds.width), height: 12)
         test2RuntimeLabel.isHidden = device != "tablet" || shell.bounds.width <= shell.bounds.height
         shell.bringSubviewToFront(test2RuntimeLabel)
-        // Test builds never enter the production SDK lifecycle, even on navigation.
-        guard device == "tablet", RooomTestRail.page(pageURL), !keyboard,
-              UIApplication.shared.applicationState == .active,
-              shell.bounds.width > shell.bounds.height else {
-            hideAll(); setReservation(RooomAdInsets()); return
-        }
-        let safe = shell.safeAreaInsets
-        let railWidth = RooomAdPresentation.standard.railWidth
-        guard shell.bounds.width - safe.left - safe.right - railWidth >= 320 else {
-            hideAll(); setReservation(RooomAdInsets()); return
-        }
         let frame = CGRect(x: safe.left, y: safe.top, width: railWidth,
                            height: max(0, shell.bounds.height - safe.top - safe.bottom))
         setReservation(RooomAdInsets(left: safe.left + railWidth))
