@@ -33,7 +33,7 @@ $merged = Read-GitHub ('git/commits/'+$ApprovedSha)
 $tested = Read-GitHub ('git/commits/'+$pr.head.sha)
 if ($merged.tree.sha -ne $tested.tree.sha) { throw 'Merged content differs from the tested PR; inspect before upload' }
 $workflow = Read-GitHub ('contents/.github/workflows/main.yml?ref='+$ApprovedSha)
-if ($workflow.sha -ne 'a90e81d1a476ddee564f8e0b88f170b6e0c0e7d4') { throw 'TestFlight workflow differs from the audited manual-only upload path' }
+if ($workflow.sha -ne 'ea7130fd0979fb9257e0dd5389ef4b647f158d4b') { throw 'TestFlight workflow differs from the audited manual-only upload path' }
 if ($BuildOnly) {
     if ($CheckOnly) { Write-Host 'BUILD PREFLIGHT PASS: no workflow dispatched, no Native build or upload.'; return }
     foreach ($name in @('ads-source-check.yml','ads-native-compile.yml') + $(if($Test2Rail){@('test2-rail-compile.yml')}else{@()})) {
@@ -89,7 +89,7 @@ if ($surfaceCss.StatusCode -ne 200 -or !$surfaceCss.Content.Contains('--rooom-ph
     throw 'Publish the full-canvas Web CSS/helper first, then run this same TestFlight command again'
 }
 }
-Write-Host ('Verified merged candidate '+$ApprovedSha+'; app com.rooom.talk; iOS '+$(if($Test2Rail){'1.6.1'}else{'1.6'})+'; generation 3.')
+Write-Host ('Verified merged candidate '+$ApprovedSha+'; app com.rooom.talk; iOS '+$(if($Test2Rail){'1.6.2'}else{'1.6'})+'; generation 3.')
 Write-Host 'The existing Mac workflow selects a build number greater than Apple latest. No Hosting or public Store release.'
 if ($CheckOnly) { Write-Host 'CHECK ONLY: no workflow dispatched, no signing or upload.'; return }
 if ((Read-GitHub ('branches/'+$branch)).commit.sha -ne $ApprovedSha) { throw 'Release changed during preflight' }
