@@ -65,7 +65,7 @@ jobs:
             -archivePath "$RUNNER_TEMP/test2-audit.xcarchive" \
             SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) ROOOM_IMOBILE_ADS ROOOM_TEST2_RAIL' \
             MARKETING_VERSION=1.6.1 CURRENT_PROJECT_VERSION=100077 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO archive > "$RUNNER_TEMP/archive-audit.log" 2>&1 || { tail -n 80 "$RUNNER_TEMP/archive-audit.log"; exit 1; }
-          node scripts/check-test2-archive.mjs bundle "$RUNNER_TEMP/test2-audit.xcarchive/Products/Applications/App.app"
+          node scripts/check-test2-archive.mjs bundle "$RUNNER_TEMP/test2-audit.xcarchive/Products/Applications/App.app" 100077
           node -e "const fs=require('fs'),c=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+'/test2-audit.xcarchive/Products/Applications/App.app/capacitor.config.json'));console.log(JSON.stringify({scope:'unsigned reproduction; not original uploaded IPA',server:c.server,appId:c.appId}));"
       - name: Boundary
         run: echo 'No signing, TestFlight upload, Store release, Hosting deploy or DB writes.'

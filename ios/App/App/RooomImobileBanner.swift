@@ -622,6 +622,7 @@ final class RooomMonetization {
     private var tabletWebAd: RooomTabletWebAd?
 #if ROOOM_TEST2_RAIL
     private var testRail: RooomTestRail?
+    private let test2RuntimeLabel = UILabel()
 #endif
     private var keyboard = false, layingOut = false
     private var observers: [NSObjectProtocol] = []
@@ -762,6 +763,20 @@ final class RooomMonetization {
         // URL. After navigation starts, always use the real page URL.
         let pageURL = web.url ?? controller?.bridge?.config.serverURL
 #if ROOOM_TEST2_RAIL
+        // Read-only identity evidence in the existing top rail margin; never an ad.
+        // Kept visible even when entry-cookie readiness hides the dummy document.
+        let testBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        test2RuntimeLabel.text = "TEST2 (\(testBuild)) · \(pageURL?.host ?? "no host") · dummy"
+        test2RuntimeLabel.font = .systemFont(ofSize: 9)
+        test2RuntimeLabel.textColor = .label
+        test2RuntimeLabel.textAlignment = .center
+        test2RuntimeLabel.isUserInteractionEnabled = false
+        test2RuntimeLabel.accessibilityIdentifier = "rooom-test2-runtime-evidence"
+        if test2RuntimeLabel.superview !== shell { shell.addSubview(test2RuntimeLabel) }
+        test2RuntimeLabel.frame = CGRect(x: shell.safeAreaInsets.left, y: shell.safeAreaInsets.top,
+            width: min(316, shell.bounds.width), height: 12)
+        test2RuntimeLabel.isHidden = device != "tablet" || shell.bounds.width <= shell.bounds.height
+        shell.bringSubviewToFront(test2RuntimeLabel)
         // Test builds never enter the production SDK lifecycle, even on navigation.
         guard device == "tablet", RooomTestRail.page(pageURL), !keyboard,
               UIApplication.shared.applicationState == .active,

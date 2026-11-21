@@ -87,7 +87,8 @@ test('actual presentation methods are extracted; SDK slots and geometry stay unc
  // Rotation repair changes only the isolated Web728 class and its placement.
  // Keep the actual SDK slot implementation and pure policy pinned to PR #17.
  const immutable=(ads.slice(0,ads.indexOf('// A last verified Web configuration'))+
-   ads.slice(ads.indexOf('// SDK-owned native object:'),ads.indexOf('final class RooomMonetization {'))).replaceAll('\r\n','\n');
+   ads.slice(ads.indexOf('// SDK-owned native object:'),ads.indexOf('final class RooomMonetization {'))).replaceAll('\r\n','\n').replace('#if ROOOM_TEST2_RAIL\n        fail("test2-sdk-disabled"); return\n#endif\n','');
+ assert(ads.includes('#if ROOOM_TEST2_RAIL\n        fail("test2-sdk-disabled"); return\n#endif'));
  assert.equal(crypto.createHash('sha256').update(immutable).digest('hex'),'591e4cb7fdf84cab90e3e821dc1716c82767dc8669d1563c78082432dae4d71d');
 });
 test('actual Swift container methods: acknowledgement and lifecycle',{

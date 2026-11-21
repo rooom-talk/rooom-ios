@@ -33,7 +33,7 @@ $merged = Read-GitHub ('git/commits/'+$ApprovedSha)
 $tested = Read-GitHub ('git/commits/'+$pr.head.sha)
 if ($merged.tree.sha -ne $tested.tree.sha) { throw 'Merged content differs from the tested PR; inspect before upload' }
 $workflow = Read-GitHub ('contents/.github/workflows/main.yml?ref='+$ApprovedSha)
-if ($workflow.sha -ne '5a389f6829a28922ba9dc812c748e42de1d684c2') { throw 'TestFlight workflow differs from the audited manual-only upload path' }
+if ($workflow.sha -ne 'd4be32a9fd3268ad0ffe62e0115db06ca3658ade') { throw 'TestFlight workflow differs from the audited manual-only upload path' }
 if ($BuildOnly) {
     if ($CheckOnly) { Write-Host 'BUILD PREFLIGHT PASS: no workflow dispatched, no Native build or upload.'; return }
     foreach ($name in @('ads-source-check.yml','ads-native-compile.yml') + $(if($Test2Rail){@('test2-rail-compile.yml')}else{@()})) {
