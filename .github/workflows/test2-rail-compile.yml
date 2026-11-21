@@ -1,7 +1,7 @@
 name: TEST2 Web-managed rail unsigned build
 on:
   pull_request:
-    paths: ['ios/App/App/RooomImobileBanner.swift', 'scripts/prepare-test2-rail.mjs', 'tests/test2-rail-races.mjs', '.github/workflows/test2-rail-compile.yml']
+    paths: ['ios/App/App/RooomImobileBanner.swift', 'scripts/check-test2-archive.mjs', 'tests/test2-archive.test.mjs', 'scripts/prepare-test2-rail.mjs', 'tests/test2-rail-races.mjs', '.github/workflows/test2-rail-compile.yml']
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -41,6 +41,9 @@ jobs:
           node scripts/prepare-test2-rail.mjs
           npm run build
           npx cap sync ios
+          node scripts/check-test2-archive.mjs config capacitor.config.json
+          node scripts/check-test2-archive.mjs config ios/App/App/capacitor.config.json
+          node --test tests/test2-archive.test.mjs
           node scripts/stage-imobile-official-sdk.mjs "$GITHUB_WORKSPACE/vendor-sdk"
       - name: Actual Swift coordinator race tests with isolated transport doubles
         run: node tests/test2-rail-races.mjs
@@ -55,5 +58,14 @@ jobs:
               CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > "$RUNNER_TEMP/build.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/build.log"; exit 1; }
             grep -F '** BUILD SUCCEEDED **' "$RUNNER_TEMP/build.log"
           done
+      - name: Reproduce Release archive and inspect actual packaged TEST2 binary
+        run: |
+          set -euo pipefail
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/test2-audit.xcarchive" \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) ROOOM_IMOBILE_ADS ROOOM_TEST2_RAIL' \
+            MARKETING_VERSION=1.6.1 CURRENT_PROJECT_VERSION=100077 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO archive > "$RUNNER_TEMP/archive-audit.log" 2>&1 || { tail -n 80 "$RUNNER_TEMP/archive-audit.log"; exit 1; }
+          node scripts/check-test2-archive.mjs bundle "$RUNNER_TEMP/test2-audit.xcarchive/Products/Applications/App.app" 100077
+          node -e "const fs=require('fs'),c=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+'/test2-audit.xcarchive/Products/Applications/App.app/capacitor.config.json'));console.log(JSON.stringify({scope:'unsigned reproduction; not original uploaded IPA',server:c.server,appId:c.appId}));"
       - name: Boundary
         run: echo 'No signing, TestFlight upload, Store release, Hosting deploy or DB writes.'

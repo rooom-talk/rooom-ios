@@ -14,7 +14,10 @@ export async function checkTest2Version(api){
    assert(Array.isArray(data.data),'Missing Apple version records');
    for(const row of data.data){if(relationship==='preReleaseVersions'){assert.equal(typeof row.attributes?.platform,'string','Missing prerelease platform');if(row.attributes.platform!=='IOS')continue;}const value=row.attributes?.[field];assert.equal(typeof value,'string','Missing Apple version');
     if(relationship==='appStoreVersions')assert(compareVersion(candidate,value)>0,`STOP: TEST2 ${candidate} must exceed registered App Store version ${value}`);
-    else assert(compareVersion(candidate,value)!==0,`STOP: TEST2 train ${candidate} already exists; inspect eligibility before reuse`);
+    // Existing TestFlight train may accept a newer build. Never reuse a train
+    // that reached an App Store version: the strict store comparison above
+    // rejects same/higher versions (including drafts) before this branch.
+    else compareVersion(candidate,value);
    }
    link=data.links?.next||null;if(link?.startsWith('https:')){const u=new URL(link);assert.equal(u.origin,'https://api.appstoreconnect.apple.com');link=u.pathname+u.search;}
   }
