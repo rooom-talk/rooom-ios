@@ -5,6 +5,7 @@ const source=fs.readFileSync('ios/App/App/RooomImobileBanner.swift','utf8');
 const body=source.slice(source.indexOf('private final class RooomTestRail:'),source.indexOf('\n#endif',source.indexOf('private final class RooomTestRail:'))).replace('private final class','final class');
 const mocks=String.raw`
 import Foundation
+import CoreGraphics
 var jobs: [()->Void] = []
 func drain() { var n=0; while !jobs.isEmpty { n += 1; precondition(n<100); jobs.removeFirst()() }; RunLoop.current.run(until: Date().addingTimeInterval(0.02)); if !jobs.isEmpty { drain() } }
 struct Cookie { let name="__session", domain="rooom-test2.web.app", path="/"; let isSecure=true, isHTTPOnly=true; var expiresDate:Date?=nil; var value:String }

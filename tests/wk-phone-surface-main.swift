@@ -37,7 +37,8 @@ final class SurfaceProbe: NSObject, WKScriptMessageHandler {
     }
 }
 final class SurfaceNavigation: NSObject, WKNavigationDelegate {
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { trace("WK navigation finished") }
+    var completed: WKNavigation?
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { completed = navigation; trace("WK navigation finished") }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         require(false, "WK navigation failed: \(error)")
     }
@@ -141,11 +142,12 @@ func navigate(_ url: String, page: String?, height: CGFloat, frames: Bool = fals
     },180);
     </script></head><body><div id="probe"></div>\(frameMarkup)</body></html>
     """
-    web.loadHTMLString(html, baseURL: URL(string: url)!)
+    let requestedNavigation = web.loadHTMLString(html, baseURL: URL(string: url)!)
     let deadline = Date().addingTimeInterval(8)
     var ready = false
     while Date() < deadline {
         RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+        if navigationDelegate.completed !== requestedNavigation { continue }
         ready = evaluate("window.__surfaceRun===\(run)&&window.__surfaceCSS===true") as? Bool == true
         let frameReady = !frames || probe.frames.filter({ ($0["run"] as? Int) == run }).count == 2
         if ready && frameReady { break }
