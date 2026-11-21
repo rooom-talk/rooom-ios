@@ -17,10 +17,10 @@ on:
         description: "Explicit test-only Apple upload, no App Store release"
         required: true
         type: choice
-        options: [DO_NOT_UPLOAD, CHECK_TEST2_VERSION, CHECK_TEST2_STATUS, UPLOAD_TESTFLIGHT]
+        options: [DO_NOT_UPLOAD, CHECK_TEST2_VERSION, CHECK_TEST2_STATUS, APPLY_TEST2_EXPORT_100079, UPLOAD_TESTFLIGHT]
         default: DO_NOT_UPLOAD
       test2_build:
-        description: Exact TEST2 build for read-only Apple status (no build/upload)
+        description: Existing TEST2 build for status or approved 100079 declaration (no build/upload)
         required: false
         type: string
         default: ''
@@ -34,7 +34,7 @@ concurrency:
 
 jobs:
   version-only:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/release/ios-review-candidate-20261011' && (inputs.confirmation == 'CHECK_TEST2_VERSION' || inputs.confirmation == 'CHECK_TEST2_STATUS') && inputs.target_environment == 'test2'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/release/ios-review-candidate-20261011' && (inputs.confirmation == 'CHECK_TEST2_VERSION' || inputs.confirmation == 'CHECK_TEST2_STATUS' || inputs.confirmation == 'APPLY_TEST2_EXPORT_100079') && inputs.target_environment == 'test2'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -71,8 +71,27 @@ jobs:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: node scripts/apple-testflight-preflight.mjs --status-only
+      - name: Verify unchanged approved Native product before declaration
+        if: inputs.confirmation == 'APPLY_TEST2_EXPORT_100079'
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';import cp from 'node:child_process';
+          const expected={"ios":"553e25886a68bcc3864bcb7ad825bf1899f7c798","public":"5e85feea32f2617016ca68aee489e1ad49850613","capacitor.config.json":"384dddb8c95081d08db6f385db2caad3bfc5c304","package.json":"0e6bc663416f061a5999fe796e977120e3995db2","package-lock.json":"f0833272f54cef4c3d46124ab97466b54919e1c7","scripts/prepare-test2-rail.mjs":"75834069c23d0e2c9be9d14f4d7ed2bf96b2f59f","scripts/stage-imobile-official-sdk.mjs":"b83814c1c59e5da324a2e825f3a4ad5e507c3169"};
+          for(const [file,hash]of Object.entries(expected))assert.equal(cp.execFileSync('git',['rev-parse','HEAD:'+file],{encoding:'utf8'}).trim(),hash,'Native product changed: '+file);
+          NODE
+      - name: Apply TN-approved previous declaration to existing TEST2 100079 only
+        if: inputs.confirmation == 'APPLY_TEST2_EXPORT_100079'
+        env:
+          TARGET_ENV: test2
+          ROOOM_TESTFLIGHT_BUILD_NUMBER: ${{ inputs.test2_build }}
+          ROOOM_TEST2_EXPORT_APPROVAL: TN_REUSE_100077_FOR_100079
+          ROOOM_APPLE_STATUS_REPORT: ${{ runner.temp }}/apple-test2-status.json
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: node scripts/apple-testflight-preflight.mjs --apply-test2-export
       - uses: actions/upload-artifact@v4
-        if: inputs.confirmation == 'CHECK_TEST2_STATUS'
+        if: inputs.confirmation == 'CHECK_TEST2_STATUS' || inputs.confirmation == 'APPLY_TEST2_EXPORT_100079'
         with:
           name: test2-apple-status
           path: ${{ runner.temp }}/apple-test2-status.json
