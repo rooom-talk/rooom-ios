@@ -946,6 +946,7 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
             presentationAcknowledgement = nil; pending.reply(nil, "Stale presentation"); return
         }
         parent?.view.layoutIfNeeded()
+        guard engine.presentation.matches(pending.document, pending.sequence) else { presentationAcknowledgement = nil; pending.reply(nil,"Stale presentation"); return }
         if UIDevice.current.userInterfaceIdiom == .phone && phoneOverlayRequested && !phoneOverlayLayoutReady { return }
         guard let web = bridge?.webView, web.bounds.width > 0, web.bounds.height > 0 else { return }
         presentationAcknowledgement = nil

@@ -87,6 +87,7 @@ private final class FakeWeb { var url: URL? = URL(string: "https://rooom-talk.co
 private final class FakeBridgeConfig { var serverURL: URL? = URL(string: "https://rooom-talk.com/") }
 private final class FakeBridge { var config = FakeBridgeConfig() }
 private final class FakeController {
+    func setPresentationCover(_ value: Any?) {}
     var phoneOverlayLayoutReady = true
     func installPhoneSurfaceSeed(_ config: RooomAdConfig) {}
     var bridge: FakeBridge? = FakeBridge()
@@ -135,29 +136,35 @@ function swiftProgram(useBaseline=false){
  const chosenOwner=useBaseline ? owner.replace(block(owner,'func layout()'),baseline.layout) : owner;
  const slotClass=chosenSlot.slice(0,chosenSlot.indexOf('func start()'))+
   slotMethods.map(m=>block(chosenSlot,m)).join('\n')+'\n}\n';
- return foundation+doubles+slotClass+String.raw`
+ return foundation+doubles+slotClass+block(owner,'struct WebPresentationPermission')+String.raw`
 private final class RooomMonetization {
     let device: String
     var controller: FakeController? = FakeController()
     var shell: UIView? = UIView()
     var web: FakeWeb? = FakeWeb()
     private var config = RooomAdConfig.off, initialLayout = RooomAdConfig.off
+    private var presentation = WebPresentationPermission()
+    private var presentationLease: Timer?
     private var entries: [String: RooomSdkSlot] = [:]
     private var tabletWebAd: RooomTabletWebAd?
     private var keyboard = false, layingOut = false
     private(set) var reservation = RooomAdInsets()
     var events: [[String: Any]] = []
-    init(device: String = "phone", attached: Bool = true) {
+    init(device: String = "phone", attached: Bool = true, granted: Bool = true) {
         self.device = device
         shell!.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
         shell!.safeAreaInsets = RooomAdInsets(bottom: 34)
         if attached { shell!.attachedWindow = UIWindow() }
+        if granted { testGrant() }
     }
+    // These SDK regression cases start after an explicit Web grant. Initial
+    // deny/navigation are exercised separately below and by actual state tests.
+    func testGrant() { let doc = presentation.documentId; _ = presentation.set(document: doc, sequence: presentation.sequence + 1, allowed: true); _ = presentation.commit(document: doc, sequence: presentation.sequence) }
     func testSeed(_ seed: RooomAdConfig) { initialLayout = seed }
     func testBeginDocument() { beginDocument() }
     func testEntry(_ key: String = "phone") -> RooomSdkSlot { entries[key]! }
     func testNavigate(_ url: String, config: RooomAdConfig) throws {
-        beginDocument(); web!.url = URL(string: url); try configure(config)
+        beginDocument(); web!.url = URL(string: url); testGrant(); try configure(config)
     }
     private func emit(_ value: [String: Any]) { events.append(value) }
 `+ownerMethods.map(m=>block(chosenOwner,m)).join('\n')+'\n}\n'+String.raw`
@@ -207,12 +214,12 @@ try runCase("phone SDK view waits for geometry ACK without changing SDK registra
     require(!entry.view.isHidden && count("show:") == 1, "restore visibility without duplicate show")
     owner.clear()
 }
-try runCase("cold start reserves verified geometry before configuration without SDK calls") {
-    let owner = RooomMonetization(); owner.testSeed(config)
+try runCase("cold start has zero reservation until Web grants presentation") {
+    let owner = RooomMonetization(granted: false); owner.testSeed(config)
     owner.web!.url = nil
     owner.layout()
-    require(owner.reservation.bottom == 84 && ImobileSdkAds.calls.isEmpty, "pre-document reserve without SDK")
-    owner.web!.url = URL(string: "https://rooom-talk.com/")
+    require(owner.reservation.bottom == 0 && ImobileSdkAds.calls.isEmpty, "pre-document full canvas without SDK")
+    owner.web!.url = URL(string: "https://rooom-talk.com/"); owner.testGrant()
     owner.layout(); owner.layout()
     require(owner.reservation.bottom == 84 && ImobileSdkAds.calls.isEmpty, "delayed Web keeps initial geometry")
     try owner.configure(config)
@@ -220,7 +227,7 @@ try runCase("cold start reserves verified geometry before configuration without 
     owner.testEntry().imobileSdkAdsSpot(phone.spotId, didReadyWithValue: .ready); DispatchQueue.main.drain()
     owner.layout(); require(owner.reservation.bottom == 84 && count("show:") == 1, "Ready and repeated layout stable")
     owner.testBeginDocument()
-    require(owner.reservation.bottom == 84, "new document preserves verified layout before config")
+    require(owner.reservation.bottom == 0, "new document revokes presentation before config")
     try owner.configure(.off)
     require(owner.reservation.bottom == 0, "explicit Web OFF remains authoritative")
     owner.layout(); require(owner.reservation.bottom == 0, "OFF does not restore old seed")
@@ -254,23 +261,23 @@ try runCase("SDK_READY without callback shows once on a framed attached view") {
     owner.clear()
 }
 for failure in ["register", "delegate", "start", "show"] {
- try runCase("first-pass synchronous " + failure + " failure clears reservation") {
+ try runCase("first-pass synchronous " + failure + " failure preserves prepared geometry") {
     if failure == "register" { ImobileSdkAds.registerOK = false }
     if failure == "delegate" { ImobileSdkAds.delegateOK = false }
     if failure == "start" { ImobileSdkAds.startOK = false }
     if failure == "show" { ImobileSdkAds.showOK = false }
     let owner = RooomMonetization(); try owner.configure(config); let entry = owner.testEntry()
-    require(entry.failed && !entry.shown && entry.view.isHidden && owner.reservation.bottom == 0, "failure must clear during current guarded layout")
+    require(entry.failed && !entry.shown && entry.view.isHidden && owner.reservation.bottom == 84, "no-fill cannot move prepared TOP")
     let attempts = ImobileSdkAds.calls.count; owner.layout(); owner.layout()
     require(ImobileSdkAds.calls.count == attempts, "failed entry must not retry")
     owner.clear()
  }
 }
-try runCase("no-fill removes footer; real later Ready recovers without restarting") {
+try runCase("no-fill preserves footer geometry; real Ready recovers without restarting") {
     let owner = RooomMonetization(); try owner.configure(config); let entry = owner.testEntry()
     entry.imobileSdkAdsSpot(phone.spotId, didFailWithValue: .notFound); DispatchQueue.main.drain()
     require(entry.failed && entry.lastFailureCode == 7 && !entry.shown && entry.view.isHidden, "real failure retained")
-    require(owner.reservation.bottom == 0 && !entry.displayCallbackReceived, "no-fill reserves zero")
+    require(owner.reservation.bottom == 84 && !entry.displayCallbackReceived, "Web-enabled layout does not depend on fill")
     owner.layout(); require(count("show:") == 1, "no application retry")
     entry.imobileSdkAdsSpot(phone.spotId, didReadyWithValue: .ready); DispatchQueue.main.drain()
     require(entry.ready && !entry.failed && entry.shown && count("show:") == 2 && count("start:") == 1, "one recovery show from actual Ready")
