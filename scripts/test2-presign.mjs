@@ -18,7 +18,10 @@ export function verifyStage(env=process.env){
  return true;
 }
 export function safeFailure(stderr){
- const stages='bounds|create|decoder|update|finalize|count_api|count_one|signature_api|signature_valid|trust_present|trust_policy_create|trust_policy|trust_anchors|trust_anchor_only|trust_date|trust_network|trust_evaluate|cert_api|cert_present|cert_parse|name_match|digital_signature|non_ca|not_submission|content_api|content_present|content_nonempty|plist_parse|inner_present|der_parse';
+ const stages='bounds|create|decoder|update|finalize|count_api|count_one|signature_api|signature_valid|trust_present|trust_policy_create|trust_policy|trust_anchors|trust_anchor_only|trust_date|trust_network|trust_evaluate|cert_api|cert_present|cert_binding|cert_parse|name_match|digital_signature|non_ca|not_submission|content_api|content_present|content_nonempty|profile_policy_load|profile_policy_symbol|profile_policy_accept|profile_policy_content|profile_policy_flags|plist_parse|inner_present|der_parse';
+ const issues='uuid_outer_missing|uuid_inner_missing|uuid_mismatch|creation_outer_missing|creation_inner_missing|creation_mismatch|expiration_outer_missing|expiration_inner_missing|expiration_mismatch|platform_outer_missing|platform_inner_missing|platform_mismatch|team_outer_missing|team_inner_missing|team_mismatch|prefix_outer_missing|prefix_inner_missing|prefix_mismatch|entitlements_outer_missing|entitlements_inner_missing|entitlements_mismatch|outer_devices|inner_devices|outer_devices_nonempty|inner_devices_nonempty|outer_all_devices|inner_all_devices|outer_all_devices_not_false|inner_all_devices_not_false|uuid_format|validity|platform|platform_missing_ios|team|prefix|outer_certificates|inner_certificates|certificate_binding|checksum_binding|certificate_list_mismatch|certificate_list_duplicates|app_identifier|team_entitlement|outer_debug|inner_debug|outer_beta|inner_beta|push_environment|requested|unclassified';
+ const profile=new RegExp('^TEST2 PRESIGN STOP: (profile_(?:'+issues+')(?:\\+(?:'+issues+'))*)\\n?$').exec(stderr||'');
+ if(profile&&profile[1].length<=4096)return 'TEST2 PRESIGN STOP: '+profile[1];
  const match=new RegExp('^TEST2 PRESIGN STOP: ((?:input|der|certificate|identity|trust|cms|profile|entitlement|context|staging)|cms_(?:outer|inner)_(?:'+stages+'))\\n?$').exec(stderr||'');
  return 'TEST2 PRESIGN STOP: '+(match?match[1]:'validation unavailable');
 }
@@ -31,8 +34,11 @@ export function main(args=process.argv.slice(2),env=process.env){
   const build=cp.spawnSync('xcrun',['swiftc','-parse-as-library','scripts/test2-presign.swift','-o',binary,'-framework','Security','-framework','CryptoKit'],{cwd:root,encoding:'utf8',timeout:120000});
   if(build.status!==0)throw Error('TEST2 PRESIGN STOP: validator compilation');
   const result=cp.spawnSync(binary,diagnosticOnly?['--diagnose-only']:[],{cwd:root,env,encoding:'utf8',timeout:180000});
-  if(result.status!==0)throw Error(safeFailure(result.stderr));
-  if(diagnosticOnly){console.log('TEST2 DIAGNOSTIC PASS: validation only; no staging/signing/upload.');return;}
+  if(result.status!==0){
+   if(diagnosticOnly&&(result.stdout||'').split(/\r?\n/).includes('TEST2 APPLE PROFILE PURPOSE PASS: production-only profile policy and chain flag verified.'))console.log('TEST2 APPLE PROFILE PURPOSE PASS: production-only profile policy and chain flag verified.');
+   throw Error(safeFailure(result.stderr));
+  }
+  if(diagnosticOnly){console.log('TEST2 APPLE PROFILE PURPOSE PASS: production-only profile policy and chain flag verified.');console.log('TEST2 DIAGNOSTIC PASS: validation only; no staging/signing/upload.');return;}
   const rows=fs.readFileSync(env.GITHUB_ENV,'utf8').split(/\r?\n/);
   for(const name of ['ROOOM_TEST2_IDENTITY_SHA1','ROOOM_TEST2_PROFILE_UUID','ROOOM_TEST2_SIGNING_DIR']){
    const row=rows.filter(r=>r.startsWith(name+'=')).at(-1);if(!row)throw Error('TEST2 PRESIGN STOP: staging');
@@ -41,4 +47,11 @@ export function main(args=process.argv.slice(2),env=process.env){
   console.log('TEST2 PRESIGN PASS: all checks passed before identity installation; no app signing.');
  }finally{if(fs.existsSync(binary))fs.unlinkSync(binary);}
 }
-if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){try{main();}catch(error){console.error(/^TEST2 PRESIGN STOP: [a-z_ ]+$/.test(error.message)?error.message:'TEST2 PRESIGN STOP: validation unavailable');process.exitCode=1;}}
+export function publicFailure(error){
+ const message=typeof error?.message==='string'?error.message:'';
+ const safe=safeFailure(message);
+ if(safe!=='TEST2 PRESIGN STOP: validation unavailable')return safe;
+ if(['TEST2 PRESIGN STOP: staged identity binding','TEST2 PRESIGN STOP: validator compilation'].includes(message))return message;
+ return 'TEST2 PRESIGN STOP: validation unavailable';
+}
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){try{main();}catch(error){console.error(publicFailure(error));process.exitCode=1;}}

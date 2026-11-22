@@ -20,6 +20,12 @@ import Darwin
         let requested: [String: Any] = ["aps-environment":"production"]
         func profile(_ p: [String: Any], _ d: [String: Any], _ requested: [String: Any] = ["aps-environment":"production"]) throws { _ = try validateProfile(p, der:d, leaf:leaf, team:team, now:now, requested:requested) }
         try check { try profile(p,d,requested) } // Legacy prefix is deliberately not Team ID.
+        try check { try require(profileIssues(p,der:d,leaf:leaf,team:team,now:now,requested:requested).isEmpty,.profile) }
+        try check { var a=p,b=d;a["Platform"]=["iOS","visionOS"];b["Platform"]=["iOS","visionOS"];try profile(a,b);try require(profileIssues(a,der:b,leaf:leaf,team:team,now:now,requested:requested).isEmpty,.profile) }
+        try rejects { var a=p,b=d;a["Platform"]=["OSX","visionOS"];b["Platform"]=["OSX","visionOS"];try profile(a,b) }
+        try rejects { var b=d;b["Platform"]=["iOS","visionOS"];try profile(p,b) }
+        try rejects { var a=p,b=d;a["Platform"]=["iOS",1] as [Any];b["Platform"]=["iOS",1] as [Any];try profile(a,b) }
+        try check { var missing=d;missing.removeValue(forKey:"UUID");try require(profileIssues(p,der:missing,leaf:leaf,team:team,now:now,requested:requested) == [.uuid_inner_missing],.profile) }
         for key in ["UUID","CreationDate","ExpirationDate","Platform","TeamIdentifier","ApplicationIdentifierPrefix","Entitlements","DeveloperCertificates"] {
             try rejects { var bad=p; bad.removeValue(forKey:key); try profile(bad,d) }
             try rejects { var bad=d; bad.removeValue(forKey:key); try profile(p,bad) }
@@ -81,8 +87,16 @@ import Darwin
         try rejects { try evaluate(trust!,anchors:roots,codeSigning:true,now:now) }
         try rejects { try evaluate(trust!,anchors:[ca],codeSigning:false,now:now,revocation:true) }
         print("SYNTHETIC phase: CMS")
+        for libraryPath in ["/usr/lib/libmis.dylib"] {
+            if let handle=dlopen(libraryPath,RTLD_NOW | RTLD_LOCAL) {
+                let hasAPI = dlsym(handle,"CTEvaluateProvisioningProfile") != nil
+                print("SYNTHETIC CoreTrust probe: \(libraryPath) loaded; profile API \(hasAPI)")
+                dlclose(handle)
+            } else { print("SYNTHETIC CoreTrust probe: \(libraryPath) unavailable") }
+        }
         let cms=try bytes("profile.cms"), expected=try bytes("payload.plist")
         try check { try require(verifiedCMS(cms,anchors:[ca],now:now,revocation:false)==expected,.cms) }
+        try rejects { _ = try verifiedCMS(cms,anchors:[ca],now:now.addingTimeInterval(3*86400),revocation:false) }
         try rejects { _ = try verifiedCMS(cms,anchors:roots,now:now) }
         try rejects { _ = try verifiedCMS(try bytes("wrong-signer.cms"),anchors:[ca],now:now,revocation:false) }
         for layer in [CMSLayer.outer, .inner] {
@@ -91,12 +105,39 @@ import Darwin
                 catch let fault as CMSFault { try check { try require(fault.layer == layer && fault.stage == stage, .cms) } }
             }
             do { _ = try verifiedCMS(try bytes("wrong-name.cms"), anchors:[ca], now:now, revocation:false, layer:layer); fatalError("Expected name rejection") }
-            catch let fault as CMSFault { try check { try require(fault.layer == layer && fault.stage == .name_match, .cms) } }
+            catch let fault as CMSFault { print("SYNTHETIC name/purpose rejection: \(fault.layer.rawValue) \(fault.stage.rawValue)"); try check { try require(fault.layer == layer && fault.stage == (layer == .outer ? .name_match : .profile_policy_accept), .cms) } }
             do { _ = try verifiedCMS(Data("not CMS".utf8), anchors:[ca], now:now, revocation:false, layer:layer); fatalError("Expected decode rejection") }
             catch let fault as CMSFault { try check { try require(fault.layer == layer && [.update,.finalize].contains(fault.stage), .cms) } }
         }
+        // Real Apple production profile-purpose policy must reject a synthetic
+        // signer even when the separate X.509 check trusts the synthetic CA.
+        do { _ = try verifiedCMS(cms,anchors:[ca],now:now,revocation:false,layer:.inner); fatalError("Expected Apple purpose rejection") }
+        catch let fault as CMSFault { try check { try require(fault.layer == .inner && fault.stage == .profile_policy_accept,.cms) } }
+        print("SYNTHETIC Apple profile policy available; unrelated certificate rejected")
+        do { try verifyProfilePolicyEvidence(cms); fatalError("Expected Apple profile chain rejection") }
+        catch let fault as CMSFault { try check { try require(fault.layer == .inner && fault.stage == .profile_policy_flags,.cms) } }
+        // Test only the C ABI return/payload boundary with controlled callbacks.
+        // The production entry has no callback, root, time or policy override.
+        let policyInput=Data([7,8,9]), policyContent=Data([8,9])
+        let accepted:ProfilePolicyEvaluator = { input, _, testRoots, output, size in
+            if testRoots { return 1 }; output!.pointee=input!.advanced(by:1); size!.pointee=2; return 0
+        }
+        try check { try checkProfilePolicy(policyInput,content:policyContent,evaluator:accepted) }
+        try rejects { try checkProfilePolicy(policyInput,content:Data([0,0]),evaluator:accepted) }
+        let badPolicies:[ProfilePolicyEvaluator] = [
+            { _,_,_,_,_ in 1 },
+            { _,_,_,output,size in output!.pointee=nil;size!.pointee=2;return 0 },
+            { input,_,_,output,size in output!.pointee=input;size!.pointee=0;return 0 },
+            { input,_,_,output,size in output!.pointee=input;size!.pointee=UInt.max;return 0 },
+            { input,_,_,output,size in output!.pointee=UnsafePointer<UInt8>(bitPattern:UInt(bitPattern:input!)-1);size!.pointee=2;return 0 },
+            { input,len,_,output,size in output!.pointee=input!.advanced(by:Int(len));size!.pointee=2;return 0 }
+        ]
+        for evaluator in badPolicies { try rejects { try checkProfilePolicy(policyInput,content:policyContent,evaluator:evaluator) } }
+        try rejects { try checkProfilePolicy(Data(),content:policyContent,evaluator:accepted) }
+        try rejects { try checkProfilePolicy(policyInput,content:Data(),evaluator:accepted) }
         guard let payloadRange=cms.range(of:Data("Synthetic".utf8)) else { fatalError("Synthetic CMS payload not embedded") }
         try rejects { var bad=cms;bad[payloadRange.lowerBound] ^= 1;_ = try verifiedCMS(bad,anchors:[ca],now:now,revocation:false) }
+        try rejects { var bad=cms;bad[payloadRange.lowerBound] ^= 1;_ = try verifiedCMS(bad,anchors:[ca],now:now,revocation:false,layer:.inner) }
         try rejects { _ = try verifiedCMS(Data("not CMS".utf8),anchors:[ca],now:now,revocation:false) }
         try rejects { _ = try runGate(["TARGET_ENV":"production"],root:folder) }
         print("TEST2 PRESIGN SWIFT TESTS PASS: \(count) checks; synthetic identities/CMS only; no app signing or upload.")
