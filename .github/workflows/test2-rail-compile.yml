@@ -11,6 +11,21 @@ on:
 permissions:
   contents: read
 jobs:
+  lifecycle-canvas:
+    runs-on: macos-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - name: Actual Swift inactive geometry, authenticated surface races and background security
+        run: |
+          node tests/test2-inactive-layout.mjs
+          node tests/test2-rail-races.mjs
+          node tests/canvas-background-permission.mjs
   build:
     runs-on: macos-latest
     timeout-minutes: 40

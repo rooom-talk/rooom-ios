@@ -56,6 +56,30 @@ let (pending,p)=make("pending");p.release();drain();precondition(p.view.loadCoun
 let (_,locked)=make(nil);drain();precondition(locked.view.loadCount==0)
 let (same,t)=make("same");drain();same.cookies=[Cookie(expiresDate:Date().addingTimeInterval(30),value:"same")];t.cookiesDidChange(in:same);drain();precondition(t.view.loadCount==2,"same value expiry change ignored")
 t.webView(t.view,didFinish:t.view.last);drain();precondition(!t.view.isHidden);t.webViewWebContentProcessDidTerminate(t.view);precondition(t.view.isHidden)
+// A transient system interruption retains this actual coordinator. Late
+// readiness/cookie callbacks must respect visibility until Native resumes it.
+let (interruptedStore,interrupted)=make("interrupt");drain()
+let interruptedNavigation=interrupted.view.last!,interruptedLoads=interrupted.view.loadCount
+interrupted.setPresentationVisible(false)
+interrupted.webView(interrupted.view,didFinish:interruptedNavigation);drain()
+precondition(interrupted.view.isHidden,"pending readiness exposed suspended rail")
+let interruptedShell=UIView()
+interrupted.place(in:interruptedShell,frame:CGRect(x:0,y:0,width:316,height:724))
+precondition(interrupted.view.isHidden,"placement exposed suspended rail")
+for _ in 0..<3 {
+ interrupted.setPresentationVisible(true);precondition(!interrupted.view.isHidden)
+ interrupted.setPresentationVisible(false)
+ interrupted.webView(interrupted.view,didFinish:interruptedNavigation);drain()
+ precondition(interrupted.view.isHidden,"repeat readiness exposed suspended rail")
+}
+precondition(interrupted.view.loadCount==interruptedLoads,"suspend/resume reloaded authenticated surface")
+interruptedStore.cookies=[Cookie(value:"interrupt-new")];interrupted.cookiesDidChange(in:interruptedStore);drain()
+precondition(interrupted.view.loadCount==interruptedLoads+1,"real session rotation loads once")
+interrupted.webView(interrupted.view,didFinish:interrupted.view.last);drain()
+precondition(interrupted.view.isHidden,"cookie readiness exposed suspended rail")
+interrupted.setPresentationVisible(true);precondition(!interrupted.view.isHidden,"resume did not reveal retained ready rail")
+precondition(interrupted.view.loadCount==interruptedLoads+1,"resume after session rotation reloaded twice")
+interrupted.release()
 precondition(RooomTestRail.page(URL(string:"https://rooom-test2.web.app/room.html")))
 for u in ["https://rooom-talk.com/","https://rooom-test2.web.app.evil/","http://rooom-test2.web.app/","https://rooom-test2.web.app/login"] {precondition(!RooomTestRail.page(URL(string:u)))}
 r.release();locked.release();t.release()
