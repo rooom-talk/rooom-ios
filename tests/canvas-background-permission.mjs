@@ -15,6 +15,7 @@ console.log('Background source boundaries PASS: exact first-party appearance-onl
 const swift=String.raw`
 import Foundation
 import CoreFoundation
+import CoreGraphics
 struct UIColor {let red:CGFloat,green:CGFloat,blue:CGFloat,alpha:CGFloat;init(red:CGFloat,green:CGFloat,blue:CGFloat,alpha:CGFloat){self.red=red;self.green=green;self.blue=blue;self.alpha=alpha}}
 struct Origin {var ${'`'}protocol${'`'}="https",host=expected,port=443}
 struct Frame {var isMainFrame=true,securityOrigin=Origin()}

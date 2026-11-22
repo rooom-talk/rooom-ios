@@ -22,6 +22,7 @@ assert.match(resume,/railShade.resume\(\); self.layout\(\)/);
 console.log('TEST2 source boundaries PASS: activity controls visibility, geometry precedes activity, production observer unchanged');
 const swift=String.raw`
 import Foundation
+import CoreGraphics
 enum AppState { case active, inactive, background }
 class UIApplication { static let shared=UIApplication(); var applicationState=AppState.active }
 struct RooomAdInsets: Equatable { var top:CGFloat=0,left:CGFloat=0,bottom:CGFloat=0,right:CGFloat=0 }
