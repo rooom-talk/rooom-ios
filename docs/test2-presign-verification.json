@@ -1,0 +1,45 @@
+{
+  "base": "ec0907518d0d2523c2e440e9165ca0df6dee6d3c",
+  "testedHead": "cbc15132ecc87897a26fcc388e1456863c7c641f",
+  "pullRequest": 31,
+  "mainWorkflowBlob": "92bb47601e980c923fcc01a27d48be1362bb2fe4",
+  "presign": {
+    "checkId": 137115535370,
+    "result": "success",
+    "nodeTests": {
+      "pass": 8,
+      "fail": 0,
+      "skip": 0
+    },
+    "nativeChecks": 83,
+    "realSyntheticCMSAndPKCS12": true,
+    "untrustedProductionCLIRejected": true,
+    "keychainIdentitySetUnchanged": true,
+    "requestEntryMocks": "passed"
+  },
+  "readiness": {
+    "mockCases": 25,
+    "powerShell7": "passed",
+    "windowsPowerShell51": "passed"
+  },
+  "regressionChecks": {
+    "version": 137115535359,
+    "sourcePolicy": 137117535418,
+    "sdk": 137115535263,
+    "shade": 137115535535,
+    "test2Build": 137115535381,
+    "status": "success",
+    "sourcePolicyInitialInfraFailure": 137115535311,
+    "sourcePolicyRetry": "same-source unsigned CI only; install ETIMEDOUT; no condition changes"
+  },
+  "nativeProductChanges": 0,
+  "advertisingChanges": 0,
+  "webChanges": 0,
+  "distributionWorkflowDispatches": 0,
+  "realSigningSecretsRead": 0,
+  "appDistributionSignatures": 0,
+  "testFlightUploads": 0,
+  "firebaseDeployments": 0,
+  "liveAppleCertificateAndProfileVerified": false,
+  "authorization": "new fixed SHA requires separate TN distribution approval"
+}

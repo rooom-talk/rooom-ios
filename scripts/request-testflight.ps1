@@ -33,10 +33,10 @@ $merged = Read-GitHub ('git/commits/'+$ApprovedSha)
 $tested = Read-GitHub ('git/commits/'+$pr.head.sha)
 if ($merged.tree.sha -ne $tested.tree.sha) { throw 'Merged content differs from the tested PR; inspect before upload' }
 $workflow = Read-GitHub ('contents/.github/workflows/main.yml?ref='+$ApprovedSha)
-if ($workflow.sha -ne '81cfc5ded40b4768ce4db2d7951815a277852b0f') { throw 'TestFlight workflow differs from the audited manual-only upload path' }
+if ($workflow.sha -ne '92bb47601e980c923fcc01a27d48be1362bb2fe4') { throw 'TestFlight workflow differs from the audited manual-only upload path' }
 if ($BuildOnly) {
     if ($CheckOnly) { Write-Host 'BUILD PREFLIGHT PASS: no workflow dispatched, no Native build or upload.'; return }
-    foreach ($name in @('ads-source-check.yml','ads-native-compile.yml') + $(if($Test2Rail){@('test2-rail-compile.yml')}else{@()})) {
+    foreach ($name in @('ads-source-check.yml','ads-native-compile.yml') + $(if($Test2Rail){@('test2-rail-compile.yml','test2-presign-check.yml')}else{@()})) {
         if ((Read-GitHub ('branches/'+$branch)).commit.sha -ne $ApprovedSha) { throw 'Release changed during preflight' }
         $request = @{ref=$branch;inputs=@{approved_sha=$ApprovedSha}} | ConvertTo-Json -Depth 4
         Invoke-RestMethod -Headers $headers -Uri ('https://api.github.com/repos/'+$repo+'/actions/workflows/'+$name+'/dispatches') -Method Post -ContentType 'application/json' -Body $request | Out-Null
@@ -50,7 +50,7 @@ if (@($runs.workflow_runs).Count -eq 0) {
     $checkSha=$pr.head.sha
     $runs = Read-GitHub ('actions/runs?head_sha='+$checkSha+'&per_page=100')
 }
-foreach ($path in @('.github/workflows/ads-source-check.yml','.github/workflows/ads-native-compile.yml') + $(if($Test2Rail){@('.github/workflows/test2-rail-compile.yml')}else{@()})) {
+foreach ($path in @('.github/workflows/ads-source-check.yml','.github/workflows/ads-native-compile.yml') + $(if($Test2Rail){@('.github/workflows/test2-rail-compile.yml','.github/workflows/test2-presign-check.yml')}else{@()})) {
     $run = @($runs.workflow_runs | Where-Object { $_.path -eq $path -and $_.head_sha -eq $checkSha } | Sort-Object id -Descending | Select-Object -First 1)
     if ($run.Count -ne 1 -or $run[0].status -ne 'completed' -or $run[0].conclusion -ne 'success') { throw ('Required candidate verification is not successful: '+$path) }
 }

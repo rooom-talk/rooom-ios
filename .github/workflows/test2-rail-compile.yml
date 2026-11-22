@@ -1,7 +1,7 @@
 name: TEST2 Web-managed rail unsigned build
 on:
   pull_request:
-    paths: ['ios/App/App/RooomImobileBanner.swift', 'scripts/prepare-test2-rail.mjs', 'scripts/check-test2-archive.mjs', 'scripts/testflight-version-policy.mjs', 'scripts/apple-testflight-preflight.mjs', 'tests/testflight-*.mjs', 'tests/test2-rail-races.mjs', 'tests/rail-shade-uikit-probe.mjs', '.github/workflows/test2-rail-compile.yml']
+    paths: ['ios/App/App/RooomImobileBanner.swift', 'scripts/prepare-test2-rail.mjs', 'scripts/test2-presign*', 'tests/test2-presign*', '.github/workflows/main.yml', 'scripts/check-test2-archive.mjs', 'scripts/testflight-version-policy.mjs', 'scripts/apple-testflight-preflight.mjs', 'tests/testflight-*.mjs', 'tests/test2-rail-races.mjs', 'tests/rail-shade-uikit-probe.mjs', '.github/workflows/test2-rail-compile.yml']
   workflow_dispatch:
     inputs:
       approved_sha:

@@ -15,7 +15,7 @@ function global:git {
 function global:Invoke-RestMethod {
     param($Headers,$Uri,$Method,$ContentType,$Body)
     if ($Method -eq 'Post') {
-        if ($Uri -notmatch '/actions/workflows/(main|ads-source-check|ads-native-compile|test2-rail-compile)\.yml/dispatches$') { throw 'Unexpected write' }
+        if ($Uri -notmatch '/actions/workflows/(main|ads-source-check|ads-native-compile|test2-rail-compile|test2-presign-check)\.yml/dispatches$') { throw 'Unexpected write' }
         $record=$Body | ConvertFrom-Json
         $record | Add-Member NoteProperty uri $Uri
         $global:testflightFixture.posts+=$record
@@ -24,9 +24,9 @@ function global:Invoke-RestMethod {
     if ($Uri -match '/branches/') { return @{commit=@{sha=$(if($global:testflightFixture.fault -eq 'head'){'c'*40}else{$sha})}} }
     if ($Uri -match '/pulls/') { return @{merged=$true;merge_commit_sha=$sha;base=@{ref='release/ios-review-candidate-20261011'};head=@{sha=$head;repo=@{full_name='rooom-talk/rooom-ios'}}} }
     if ($Uri -match '/git/commits/') { return @{tree=@{sha=$(if($global:testflightFixture.fault -eq 'tree' -and $Uri.EndsWith($head)){'different'}else{'same'})}} }
-    if ($Uri -match '/contents/') { return @{sha=$(if($global:testflightFixture.fault -eq 'workflow'){'unexpected'}else{'81cfc5ded40b4768ce4db2d7951815a277852b0f'})} }
+    if ($Uri -match '/contents/') { return @{sha=$(if($global:testflightFixture.fault -eq 'workflow'){'unexpected'}else{'92bb47601e980c923fcc01a27d48be1362bb2fe4'})} }
     if ($Uri -match '/actions/runs\?') {
-        return @{workflow_runs=@('ads-source-check.yml','ads-native-compile.yml','test2-rail-compile.yml') | ForEach-Object { @{id=10;path='.github/workflows/'+$_;head_sha=$sha;status='completed';conclusion=$(if($global:testflightFixture.fault -eq 'checks'){'failure'}else{'success'})} }}
+        return @{workflow_runs=@('ads-source-check.yml','ads-native-compile.yml','test2-rail-compile.yml','test2-presign-check.yml') | ForEach-Object { @{id=10;path='.github/workflows/'+$_;head_sha=$sha;status='completed';conclusion=$(if($global:testflightFixture.fault -eq 'checks'){'failure'}else{'success'})} }}
     }
     throw ('Unexpected request '+$Uri)
 }
@@ -72,3 +72,5 @@ $global:testflightFixture.posts=@();$global:testflightFixture.fault='live';$refu
 try { & $entry -ApprovedSha $sha -PullRequest 21 -Test2Rail -WebRoot $webFixture -WebSha ('d'*40) } catch { $refused=$true }
 if (!$refused -or $global:testflightFixture.posts.Count) { throw 'Live Web mismatch did not stop upload' }
 Write-Host 'PASS: TEST2 live Web mismatch rejects before workflow dispatch.'
+# Expected failing native mocks were asserted above; do not leak their exit status to the CI shell.
+$global:LASTEXITCODE=0
