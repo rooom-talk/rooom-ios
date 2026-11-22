@@ -748,7 +748,14 @@ final class RooomMonetization {
         }
         pageLocation = web?.observe(\.url, options: [.new]) { [weak self] _, _ in self?.layout() }
         observers.append(NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.railShade.suspend(); self?.hideAll()
+            self?.railShade.suspend()
+#if ROOOM_TEST2_RAIL
+            // Temporary system UI hides the creative without releasing its
+            // authenticated surface or changing the Web's reserved width.
+            self?.testRail?.setPresentationVisible(false)
+#else
+            self?.hideAll()
+#endif
         })
         observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }; self.railShade.resume(); self.layout()
@@ -872,7 +879,6 @@ final class RooomMonetization {
 #if ROOOM_TEST2_RAIL
         // Test builds never enter the production SDK lifecycle, even on navigation.
         guard device == "tablet", RooomTestRail.page(pageURL), !keyboard,
-              UIApplication.shared.applicationState == .active,
               shell.bounds.width > shell.bounds.height else {
             hideAll(); setReservation(RooomAdInsets()); return
         }
@@ -884,6 +890,11 @@ final class RooomMonetization {
         let frame = CGRect(x: safe.left, y: safe.top, width: railWidth,
                            height: max(0, shell.bounds.height - safe.top - safe.bottom))
         setReservation(RooomAdInsets(left: safe.left + railWidth))
+        // Geometry follows the current posture even while inactive. Activity
+        // controls visibility/creation only; Control Center must not widen WK.
+        guard UIApplication.shared.applicationState == .active else {
+            testRail?.setPresentationVisible(false); return
+        }
         if testRail == nil { testRail = RooomTestRail(source: web.configuration.websiteDataStore.httpCookieStore, frame: frame) }
         testRail?.setPresentationVisible(presentation.committed)
         testRail?.place(in: shell, frame: frame)
@@ -1112,6 +1123,7 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
     private func applyCanvasBackground(_ color: UIColor) {
         guard let web = bridge?.webView else { return }
         canvasBackground = color
+        if presentationCover != nil { presentationCover = color }
         // Keep the same canvas behind the page while WebKit replaces tiles or
         // UIKit rotates/resizes it. Web still owns all layout and theme choices.
         web.isOpaque = false
@@ -1160,6 +1172,9 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
         if let body = message.body as? [String:Any], body["op"] as? String == "presentation" {
             handlePresentation(message, body: body, reply: reply); return
         }
+        if let body = message.body as? [String:Any], body["op"] as? String == "background" {
+            handleBackground(message, body: body, reply: reply); return
+        }
 #if ROOOM_TEST2_RAIL
         reply(nil, "Production SDK bridge is disabled in the TEST2 layout build")
         return
@@ -1182,17 +1197,6 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
                 phoneOverlayRequested = enabled
                 adReservationChanged?(engine.reservation)
                 reply(["ok":true],nil)
-            case "background":
-                // Appearance only: restricted to the existing trusted first-party
-                // main-frame handler. Reject malformed/oversized color data.
-                guard let values = body["rgb"] as? [NSNumber], values.count == 3,
-                      values.allSatisfy({ $0.intValue >= 0 && $0.intValue <= 255 &&
-                          $0.doubleValue == Double($0.intValue) }) else { throw RooomAdError.invalidRequest }
-                let color = UIColor(red: CGFloat(values[0].intValue) / 255,
-                    green: CGFloat(values[1].intValue) / 255,
-                    blue: CGFloat(values[2].intValue) / 255, alpha: 1)
-                applyCanvasBackground(color)
-                reply(["ok":true],nil)
             case "diagnostics":
                 reply(engine.diagnostics(), nil)
             case "configure":
@@ -1212,6 +1216,26 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
             default: throw RooomAdError.unsupported
             }
         } catch { reply(nil,"Ad request rejected: \(error)") }
+    }
+    // Reuse the appearance-only bridge in TEST2; the production SDK remains
+    // disabled. Both the message origin and current main document must match.
+    private func handleBackground(_ message: WKScriptMessage, body: [String:Any], reply: @escaping (Any?, String?) -> Void) {
+#if ROOOM_TEST2_RAIL
+        let expectedHost = "rooom-test2.web.app"
+#else
+        let expectedHost = "rooom-talk.com"
+#endif
+        let origin = message.frameInfo.securityOrigin
+        guard message.frameInfo.isMainFrame, origin.protocol == "https", origin.host == expectedHost,
+              [0,443].contains(origin.port), let url = bridge?.webView?.url,
+              url.scheme == "https", url.host == expectedHost, url.port == nil || url.port == 443,
+              body["version"] as? Int == 1, let values = body["rgb"] as? [NSNumber], values.count == 3,
+              values.allSatisfy({ CFGetTypeID($0) != CFBooleanGetTypeID() &&
+                  $0.doubleValue.isFinite && $0.doubleValue >= 0 && $0.doubleValue <= 255 &&
+                  $0.doubleValue.rounded() == $0.doubleValue }) else { reply(nil,"Untrusted or invalid background"); return }
+        applyCanvasBackground(UIColor(red: CGFloat(values[0].doubleValue) / 255,
+            green: CGFloat(values[1].doubleValue) / 255, blue: CGFloat(values[2].doubleValue) / 255, alpha: 1))
+        reply(["ok":true],nil)
     }
 }
 #endif

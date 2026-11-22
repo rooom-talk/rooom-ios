@@ -56,7 +56,10 @@ jobs:
           path: ${{ runner.temp }}/presentation-probe-report.json
           if-no-files-found: error
       - name: Actual Swift coordinator race tests with isolated transport doubles
-        run: node tests/test2-rail-races.mjs
+        run: |
+          node tests/test2-rail-races.mjs
+          node tests/test2-inactive-layout.mjs
+          node tests/canvas-background-permission.mjs
       - name: Compile simulator and device without signing
         run: |
           set -euo pipefail
