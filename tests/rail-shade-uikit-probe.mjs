@@ -77,7 +77,12 @@ private final class ProbeController:UIViewController,WKNavigationDelegate,WKScri
   check(snapshot["accepted"] as? Bool == true,"real trusted HTTPS-origin WK snapshot accepted")
   guard let identity=snapshot["value"] as? [String:Any],identity["documentId"] as? String == doc,identity["sequence"] as? Int == 0 else{throw NSError(domain:"Real trusted WK snapshot did not match engine; no transport fallback",code:2)}
   let on=try await command(main,["version":1,"op":"presentation","command":"shade","documentId":doc,"sequence":1,"enabled":true,"rgba":[5.0,8.0,12.0,0.73],"leaseMilliseconds":5000.0]);check(on["accepted"] as? Bool == true,"real trusted WK shade ON accepted")
-  let cover=engine.railShade.view;check(!cover.isHidden,"ON actual UIView visible");check(cover.frame==CGRect(x:0,y:0,width:316,height:768),"full left reservation covered");check(shell.subviews.last===cover,"shade above WK rail");check(cover.isUserInteractionEnabled && shell.hitTest(CGPoint(x:100,y:100),with:nil)===cover,"ad touch intercepted");check(shell.hitTest(CGPoint(x:500,y:100),with:nil)!==cover,"main touches not intercepted")
+  let cover=engine.railShade.view;check(!cover.isHidden,"ON actual UIView visible");check(cover.frame==CGRect(x:0,y:0,width:316,height:768),"full left reservation covered");check(shell.subviews.last===cover,"shade above WK rail");check(cover.isUserInteractionEnabled && shell.hitTest(CGPoint(x:100,y:100),with:nil)===cover,"ad touch intercepted")
+  let mainHit=shell.hitTest(CGPoint(x:500,y:100),with:nil)
+  let mainOwnsHit=mainHit.map { ($0 === main) || $0.isDescendant(of:main) } ?? false
+  let mainHitOkay=(mainHit !== cover) && mainOwnsHit
+  check(mainHitOkay,"main touches not intercepted")
+  if !mainHitOkay { cases.append(["case":"main-hit-failure-diagnostic","hitClass":mainHit.map { String(describing:type(of:$0)) } ?? "nil","hitInShell":mainHit.map { rect($0.convert($0.bounds,to:shell)) } ?? [:],"mainFrame":rect(main.frame),"coverFrame":rect(cover.frame),"mainOwnsHit":mainOwnsHit]) }
   var red:CGFloat=0,green:CGFloat=0,blue:CGFloat=0,alpha:CGFloat=0;check(cover.backgroundColor?.getRed(&red,green:&green,blue:&blue,alpha:&alpha)==true,"RGBA readable");check(abs(red-5/255)<0.0001 && abs(green-8/255)<0.0001 && abs(blue-12/255)<0.0001 && abs(alpha-0.73)<0.0001 && cover.alpha==1,"actual UIColor alpha applied once")
   try await retained(m,r,"ON");mark("on-frame-alpha-hit-test")
   shell.addSubview(UIView(frame:r));engine.refresh();check(shell.subviews.last===cover,"existing-layout end reasserts front order")

@@ -1,7 +1,7 @@
 name: TEST2 Web-managed rail unsigned build
 on:
   pull_request:
-    paths: ['ios/App/App/RooomImobileBanner.swift', 'scripts/prepare-test2-rail.mjs', 'tests/test2-rail-races.mjs', '.github/workflows/test2-rail-compile.yml']
+    paths: ['ios/App/App/RooomImobileBanner.swift', 'scripts/prepare-test2-rail.mjs', 'tests/test2-rail-races.mjs', 'tests/rail-shade-uikit-probe.mjs', '.github/workflows/test2-rail-compile.yml']
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -48,16 +48,10 @@ jobs:
         env:
           ROOOM_PRESENTATION_PROBE_REPORT: ${{ runner.temp }}/presentation-probe-report.json
         run: node tests/web-presentation-uikit-probe.mjs
-      - name: Web-owned RGBA rail overlay in real UIKit and WK (offline unsigned)
-        env:
-          ROOOM_RAIL_SHADE_PROBE_REPORT: ${{ runner.temp }}/rail-shade-probe-report.json
-        run: node tests/rail-shade-uikit-probe.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: unsigned-offline-presentation-probe
-          path: |
-            ${{ runner.temp }}/presentation-probe-report.json
-            ${{ runner.temp }}/rail-shade-probe-report.json
+          path: ${{ runner.temp }}/presentation-probe-report.json
           if-no-files-found: error
       - name: Actual Swift coordinator race tests with isolated transport doubles
         run: node tests/test2-rail-races.mjs
@@ -74,3 +68,29 @@ jobs:
           done
       - name: Boundary
         run: echo 'No signing, TestFlight upload, Store release, Hosting deploy or DB writes.'
+  rail-shade-probe:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha || github.sha }}
+          persist-credentials: false
+      - name: Verify explicitly selected candidate
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - name: Web-owned RGBA rail overlay in real UIKit and WK (offline unsigned)
+        env:
+          ROOOM_RAIL_SHADE_PROBE_REPORT: ${{ runner.temp }}/rail-shade-probe-report.json
+        run: node tests/rail-shade-uikit-probe.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-rail-shade-probe
+          path: ${{ runner.temp }}/rail-shade-probe-report.json
+          if-no-files-found: error
