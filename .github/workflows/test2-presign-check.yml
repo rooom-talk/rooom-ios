@@ -62,6 +62,13 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 8
     steps:
+      - name: Bind dispatch input to workflow source before checkout
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_SHA" = "$APPROVED_SHA"
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.approved_sha }}

@@ -83,7 +83,8 @@ import Darwin
         print("SYNTHETIC phase: CMS")
         for libraryPath in ["/usr/lib/libCoreTrust.dylib", "/System/Library/PrivateFrameworks/CoreTrust.framework/CoreTrust", "/System/Library/PrivateFrameworks/CoreTrust.framework/Versions/A/CoreTrust"] {
             if let handle=dlopen(libraryPath,RTLD_NOW | RTLD_LOCAL) {
-                print("SYNTHETIC CoreTrust probe: \(libraryPath) loaded; profile API \(dlsym(handle,\"CTEvaluateProvisioningProfile\") != nil)")
+                let hasAPI = dlsym(handle,"CTEvaluateProvisioningProfile") != nil
+                print("SYNTHETIC CoreTrust probe: \(libraryPath) loaded; profile API \(hasAPI)")
                 dlclose(handle)
             } else { print("SYNTHETIC CoreTrust probe: \(libraryPath) unavailable") }
         }
