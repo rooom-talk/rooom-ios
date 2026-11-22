@@ -21,11 +21,17 @@ test('same existing trusted Web background message paints every exposed native s
  assert.ok(apply.includes('web.underPageBackgroundColor = color'));
  assert.ok(apply.includes('web.isOpaque = false'));
  assert.doesNotMatch(apply,/constraint|reserved|keyboard|configure\(|addSubview|evaluateJavaScript/);
- const handler=source.slice(source.indexOf('case "background":'),source.indexOf('case "configure":'));
- assert.ok(handler.includes('applyCanvasBackground(color)'));
+ assert.ok(apply.includes('if presentationCover != nil { presentationCover = color }'));
+ const handler=source.slice(source.indexOf('private func handleBackground('),source.indexOf('\n}\n#endif',source.indexOf('private func handleBackground(')));
+ assert.ok(handler.includes('applyCanvasBackground(UIColor('));
  assert.ok(handler.includes('values.count == 3'));
- assert.ok(handler.includes('$0.doubleValue == Double($0.intValue)'));
- assert.match(source,/message\.frameInfo\.isMainFrame/); // security stays on existing handler
+ assert.ok(handler.includes('$0.doubleValue.rounded() == $0.doubleValue'));
+ assert.ok(handler.includes('CFGetTypeID($0) != CFBooleanGetTypeID()'));
+ assert.match(handler,/message\.frameInfo\.isMainFrame/);
+ assert.match(handler,/origin\.host == expectedHost/);
+ assert.match(handler,/url\.host == expectedHost/);
+ const handle=source.slice(source.indexOf('fileprivate func handle('));
+ assert.ok(handle.indexOf('handleBackground(message')<handle.indexOf('Production SDK bridge is disabled'));
 });
 test('iPad launch is a static canvas/wordmark; iPhone launch and all ad geometry stay separate',()=>{
  const plist=read('ios/App/App/Info.plist');
