@@ -108,7 +108,8 @@ import Darwin
         do { _ = try verifiedCMS(cms,anchors:[ca],now:now,revocation:false,layer:.inner); fatalError("Expected Apple purpose rejection") }
         catch let fault as CMSFault { try check { try require(fault.layer == .inner && fault.stage == .profile_policy_accept,.cms) } }
         print("SYNTHETIC Apple profile policy available; unrelated certificate rejected")
-        try rejects { try verifyProfilePolicyEvidence(cms) }
+        do { try verifyProfilePolicyEvidence(cms); fatalError("Expected Apple profile chain rejection") }
+        catch let fault as CMSFault { try check { try require(fault.layer == .inner && fault.stage == .profile_policy_flags,.cms) } }
         // Test only the C ABI return/payload boundary with controlled callbacks.
         // The production entry has no callback, root, time or policy override.
         let policyInput=Data([7,8,9]), policyContent=Data([8,9])

@@ -26,6 +26,8 @@ The public CoreTrust header does not guarantee macOS availability, expiration or
 
 The initial credential-free macOS 15.8.2 test failed closed because `/usr/lib/libCoreTrust.dylib` was not available. Runtime probe job [137153534276](https://github.com/rooom-talk/rooom-ios/actions/runs/45004689163/job/137153534276) established that both `CTEvaluateProvisioningProfile` and `CTVerifyAmfiCertificateChain` are exported through the absolute system image `/usr/lib/libmis.dylib`. The implementation now uses that image, with no search-path or weaker-policy fallback. Runtime probe success is availability evidence only, not profile authorization.
 
-## Validation status
+## Validation evidence and constraints
 
-Pending real macOS tests, real-material validation-only confirmation and independent re-audit. This document does not grant deployment approval. Product Native code, ad SDK/placement, PR29 shade, Web, Firebase and the existing distribution workflow are unchanged. No app signing, IPA export or TestFlight upload is authorized by this change.
+Final exact-source macOS test results, real-material validation-only evidence, and independent re-audit results must be recorded in PR #34 and the TN delivery report before integration. In inspection mode only, `CTVerifyAmfiCertificateChain` must also return success and `CORETRUST_POLICY_PROVISIONING_PROFILE` (bit 39), whose purpose is explicitly documented in Apple's header. This adds an auditable purpose result without exposing the signer or allowing an OID by guesswork.
+
+These are Apple system private exports, not a public SDK compatibility guarantee. OS/provider changes fail closed. This document does not grant deployment approval. Product Native code, ad SDK/placement, PR29 shade, Web, Firebase and the existing distribution workflow are unchanged. No app signing, IPA export or TestFlight upload is authorized by this change.
