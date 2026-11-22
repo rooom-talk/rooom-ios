@@ -1,0 +1,38 @@
+name: TEST2 presign gate tests (synthetic, no distribution)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/main.yml'
+      - '.github/workflows/test2-presign-check.yml'
+      - 'scripts/test2-presign*'
+      - 'scripts/presign-apple-roots/**'
+      - 'tests/test2-presign*'
+      - 'scripts/request-testflight.ps1'
+      - 'tests/testflight-command.test.ps1'
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact source to test; never signs/uploads the app
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  presign-gate:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Source, order, binding and failure-path tests without credentials
+        run: node --test tests/test2-presign.test.mjs
+      - name: Actual macOS Security API tests using disposable synthetic CA and identities
+        run: node tests/test2-presign-crypto.mjs
+      - name: Existing Windows request entry with fully mocked I/O
+        shell: pwsh
+        run: ./tests/testflight-command.test.ps1

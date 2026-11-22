@@ -250,7 +250,18 @@ jobs:
         run: |
           node scripts/apple-testflight-preflight.mjs
 
+      - name: Verify TEST2 signing materials before any signing
+        if: inputs.target_environment == 'test2'
+        env:
+          TARGET_ENV: test2
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: node scripts/test2-presign.mjs
+
       - name: Install Apple certificate and provisioning profile
+        if: inputs.target_environment != 'test2'
         env:
           CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
@@ -289,12 +300,40 @@ jobs:
 
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
 
+      - name: Install only the prevalidated TEST2 signing identity
+        if: inputs.target_environment == 'test2'
+        env:
+          TARGET_ENV: test2
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/test2-presign.mjs --verify-stage
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$ROOOM_TEST2_SIGNING_DIR/identity.p12" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH" > /dev/null
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")"
+          printf '%s' "$IDENTITIES" | grep -Fq "$ROOOM_TEST2_IDENTITY_SHA1" || { echo 'TEST2 PRESIGN STOP: imported identity unavailable'; exit 1; }
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp "$ROOOM_TEST2_SIGNING_DIR/profile.mobileprovision" ~/Library/MobileDevice/Provisioning\ Profiles/"$ROOOM_TEST2_PROFILE_UUID".mobileprovision
+          echo "PROFILE_UUID=$ROOOM_TEST2_PROFILE_UUID" >> "$GITHUB_ENV"
+
       - name: Create archive
         run: |
           cd ios/App
           BUILD_NUMBER="${ROOOM_TESTFLIGHT_BUILD_NUMBER:?Apple build preflight missing}"
           echo "Review candidate build number: $BUILD_NUMBER"
           EXTRA_FLAGS=()
+          if [ "${{ inputs.target_environment }}" = 'test2' ]; then
+            TARGET_ENV=test2 node "$GITHUB_WORKSPACE/scripts/test2-presign.mjs" --verify-stage || exit 1
+            test "$PROFILE_UUID" = "$ROOOM_TEST2_PROFILE_UUID"
+            EXTRA_FLAGS+=("CODE_SIGN_STYLE=Manual" "CODE_SIGN_IDENTITY=$ROOOM_TEST2_IDENTITY_SHA1")
+          fi
           if [ -n "${ROOOM_BUILD_CONDITIONS:-}" ]; then EXTRA_FLAGS+=("SWIFT_ACTIVE_COMPILATION_CONDITIONS=$ROOOM_BUILD_CONDITIONS"); fi
 
           xcodebuild \
@@ -322,12 +361,17 @@ jobs:
 
       - name: Create ExportOptions.plist
         run: |
+          if [ "${{ inputs.target_environment }}" = 'test2' ]; then
+            TARGET_ENV=test2 node scripts/test2-presign.mjs --verify-stage || exit 1
+            export ROOOM_TEST2_EXPORT_IDENTITY="<key>signingCertificate</key><string>$ROOOM_TEST2_IDENTITY_SHA1</string>"
+          fi
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
               ${ROOOM_INTERNAL_ONLY:-}
+              ${ROOOM_TEST2_EXPORT_IDENTITY:-}
               <key>method</key>
               <string>app-store-connect</string>
               <key>teamID</key>
@@ -345,6 +389,9 @@ jobs:
 
       - name: Export IPA
         run: |
+          if [ "${{ inputs.target_environment }}" = 'test2' ]; then
+            TARGET_ENV=test2 node scripts/test2-presign.mjs --verify-stage || exit 1
+          fi
           mkdir -p "$RUNNER_TEMP/export"
 
           xcodebuild \
