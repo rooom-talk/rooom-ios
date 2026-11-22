@@ -85,6 +85,16 @@ import Darwin
         try check { try require(verifiedCMS(cms,anchors:[ca],now:now,revocation:false)==expected,.cms) }
         try rejects { _ = try verifiedCMS(cms,anchors:roots,now:now) }
         try rejects { _ = try verifiedCMS(try bytes("wrong-signer.cms"),anchors:[ca],now:now,revocation:false) }
+        for layer in [CMSLayer.outer, .inner] {
+            for stage in CMSStage.allCases {
+                do { try cmsStep(layer, stage) { throw GateError.input }; fatalError("Expected CMS diagnostic") }
+                catch let fault as CMSFault { try check { try require(fault.layer == layer && fault.stage == stage, .cms) } }
+            }
+            do { _ = try verifiedCMS(try bytes("wrong-name.cms"), anchors:[ca], now:now, revocation:false, layer:layer); fatalError("Expected name rejection") }
+            catch let fault as CMSFault { try check { try require(fault.layer == layer && fault.stage == .name_match, .cms) } }
+            do { _ = try verifiedCMS(Data("not CMS".utf8), anchors:[ca], now:now, revocation:false, layer:layer); fatalError("Expected decode rejection") }
+            catch let fault as CMSFault { try check { try require(fault.layer == layer && [.update,.finalize].contains(fault.stage), .cms) } }
+        }
         guard let payloadRange=cms.range(of:Data("Synthetic".utf8)) else { fatalError("Synthetic CMS payload not embedded") }
         try rejects { var bad=cms;bad[payloadRange.lowerBound] ^= 1;_ = try verifiedCMS(bad,anchors:[ca],now:now,revocation:false) }
         try rejects { _ = try verifiedCMS(Data("not CMS".utf8),anchors:[ca],now:now,revocation:false) }
