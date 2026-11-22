@@ -1,7 +1,7 @@
 name: TEST2 Web-managed rail unsigned build
 on:
   pull_request:
-    paths: ['ios/App/App/RooomImobileBanner.swift', 'scripts/prepare-test2-rail.mjs', 'scripts/test2-presign*', 'tests/test2-presign*', '.github/workflows/main.yml', 'scripts/check-test2-archive.mjs', 'scripts/testflight-version-policy.mjs', 'scripts/apple-testflight-preflight.mjs', 'tests/testflight-*.mjs', 'tests/test2-rail-races.mjs', 'tests/rail-shade-uikit-probe.mjs', '.github/workflows/test2-rail-compile.yml']
+    paths: ['ios/App/App/RooomImobileBanner.swift', 'scripts/prepare-test2-rail.mjs', 'scripts/test2-presign*', 'tests/test2-presign*', '.github/workflows/main.yml', 'scripts/check-test2-archive.mjs', 'scripts/testflight-version-policy.mjs', 'scripts/apple-testflight-preflight.mjs', 'tests/testflight-*.mjs', 'tests/test2-rail-races.mjs', 'tests/rail-shade-uikit-probe.mjs', 'tests/rail-shade-lifecycle.mjs', '.github/workflows/test2-rail-compile.yml']
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -24,6 +24,7 @@ jobs:
       - name: Actual Swift inactive geometry, authenticated surface races and background security
         run: |
           node tests/test2-inactive-layout.mjs
+          node tests/rail-shade-lifecycle.mjs
           node tests/test2-rail-races.mjs
           node tests/canvas-background-permission.mjs
   build:

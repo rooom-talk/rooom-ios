@@ -9,7 +9,7 @@ const source=fs.readFileSync(new URL('../ios/App/App/RooomImobileBanner.swift',i
 const coordinator=source.slice(source.indexOf('final class RooomMonetization {'));
 function block(marker){const start=coordinator.indexOf(marker);assert(start>=0,marker);const open=coordinator.indexOf('{',start);let depth=0;for(let i=open;i<coordinator.length;i++){if(coordinator[i]==='{')depth++;if(coordinator[i]==='}'&&--depth===0)return coordinator.slice(start,i+1);}throw Error(marker);}
 function observer(name){const start=coordinator.indexOf('forName: UIApplication.'+name);assert(start>=0,name);const from=coordinator.indexOf('{ [weak self] _ in',start),to=coordinator.indexOf('\n        })',from);assert(from>start&&to>from);return coordinator.slice(from+'{ [weak self] _ in'.length,to);}
-const layout=block('    func layout() {'),hide=block('    private func hideAll() {'),reserve=block('    private func setReservation(');
+const layout=block('    func layout() {'),hide=block('    private func hideAll('),reserve=block('    private func setReservation(');
 const resign=observer('willResignActiveNotification'),resume=observer('didBecomeActiveNotification');
 const test2=layout.slice(layout.indexOf('#if ROOOM_TEST2_RAIL'),layout.indexOf('#else'));
 const reservation=test2.indexOf('setReservation(RooomAdInsets(left: safe.left + railWidth))');
@@ -17,9 +17,9 @@ const activity=test2.indexOf('guard UIApplication.shared.applicationState == .ac
 assert(reservation>=0&&activity>reservation,'TEST2 must reserve eligible geometry before checking activity');
 assert(test2.indexOf('if testRail == nil')>activity,'Inactive layout must not allocate a rail');
 assert.match(test2.slice(activity,test2.indexOf('if testRail == nil')),/testRail\?\.setPresentationVisible\(false\); return/);
-assert.match(resign,/#if ROOOM_TEST2_RAIL[\s\S]*testRail\?\.setPresentationVisible\(false\)[\s\S]*#else[\s\S]*hideAll\(\)/);
+assert.match(resign,/#if ROOOM_TEST2_RAIL[\s\S]*testRail\?\.setPresentationVisible\(false\)[\s\S]*#else[\s\S]*hideAll\(preservingShade: true\)/);
 assert.match(resume,/railShade.resume\(\); self.layout\(\)/);
-console.log('TEST2 source boundaries PASS: activity controls visibility, geometry precedes activity, production observer unchanged');
+console.log('TEST2 source boundaries PASS: activity controls visibility, geometry precedes activity, production advertising hide retained');
 const swift=String.raw`
 import Foundation
 import CoreGraphics

@@ -39,7 +39,7 @@ const slotMethods=['func start()', 'func showBannerIfNeeded(', 'private func fai
  'func imobileSdkAdsSpotDidShow(', 'func release()', 'deinit'];
 const ownerMethods=['func configure(', 'private func releaseCreatives()', 'private func beginDocument()',
  'func clear()', 'private func setReservation(', 'func setKeyboardVisible(', 'func hideFeed()',
- 'private func hideAll()', 'private func entry(', 'private func phoneReservedInsets(', 'func layout()', 'fileprivate func slotChanged(', 'func setRailShade(', 'private func updateRailShadeFrame()'];
+ 'private func hideAll(', 'private func entry(', 'private func phoneReservedInsets(', 'func layout()', 'fileprivate func slotChanged(', 'func setRailShade(', 'private func updateRailShadeFrame()', 'private func resetRailShade()'];
 const foundation=source.split('#if ROOOM_IMOBILE_ADS')[0];
 
 const doubles=String.raw`
@@ -79,7 +79,7 @@ private final class UserDefaults {
     func set(_ data: Data, forKey key: String) {} // Never write device preferences.
 }
 private final class UIApplication {
-    enum State { case active, inactive }
+    enum State { case active, inactive, background }
     static let shared = UIApplication()
     var applicationState: State = .active
 }
@@ -154,6 +154,7 @@ private final class RooomMonetization {
     private var presentation = WebPresentationPermission()
     private var presentationLease: Timer?
     private let railShade = RailShadeBoundary()
+    private var railShadeDocument = UUID().uuidString
     private var entries: [String: RooomSdkSlot] = [:]
     private var tabletWebAd: RooomTabletWebAd?
     private var keyboard = false, layingOut = false
@@ -172,7 +173,7 @@ private final class RooomMonetization {
     func testSeed(_ seed: RooomAdConfig) { initialLayout = seed }
     func testBeginDocument() { beginDocument() }
     func testEntry(_ key: String = "phone") -> RooomSdkSlot { entries[key]! }
-    func testSetShade(_ color: [Double]?, _ sequence: Int) throws { try setRailShade(document: presentation.documentId, sequence: sequence, rgba: color, leaseMilliseconds: 5000) }
+    func testSetShade(_ color: [Double]?, _ sequence: Int) throws { try setRailShade(document: railShadeDocument, sequence: sequence, rgba: color, leaseMilliseconds: 5000) }
     var testShadeView: UIView { railShade.view }
     func testNavigate(_ url: String, config: RooomAdConfig) throws {
         beginDocument(); web!.url = URL(string: url); testGrant(); try configure(config)

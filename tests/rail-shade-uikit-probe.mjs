@@ -10,6 +10,8 @@ const root=process.env.ROOOM_IOS_SOURCE_ROOT||path.resolve(path.dirname(fileURLT
 const source=fs.readFileSync(path.join(root,'ios/App/App/RooomImobileBanner.swift'),'utf8').replaceAll('\r\n','\n');
 function block(marker){const start=source.indexOf(marker);assert(start>=0,marker);const open=source.indexOf('{',start);let depth=0;for(let i=open;i<source.length;i++){if(source[i]==='{')depth++;if(source[i]==='}'&&--depth===0)return source.slice(start,i+1);}throw Error('Unclosed source block '+marker);}
 const shade=block('final class RooomRailShade {'),permission=block('struct WebPresentationPermission {'),insets=block('struct RooomAdInsets:'),error=block('enum RooomAdError:'),set=block('func setRailShade('),frame=block('private func updateRailShadeFrame()'),handler=block('private func handlePresentation(');
+function observer(name){const start=source.indexOf('forName: UIApplication.'+name);assert(start>=0,name);const from=source.indexOf('{ [weak self] _ in',start),to=source.indexOf('\n        })',from);assert(from>start&&to>from);return source.slice(from+'{ [weak self] _ in'.length,to);}
+const resign=observer('willResignActiveNotification'),entered=observer('didEnterBackgroundNotification'),became=observer('didBecomeActiveNotification'),background=block('private func enterRailShadeBackground()'),resetShade=block('private func resetRailShade()');
 const hash=s=>crypto.createHash('sha256').update(s).digest('hex');
 const swift=String.raw`
 import Foundation
@@ -22,12 +24,27 @@ import QuartzCore
 private final class ProbeEngine {
  var shell:UIView?;var device="tablet",reservation=RooomAdInsets()
  var presentation=WebPresentationPermission();let railShade=RooomRailShade()
- init(_ shell:UIView){self.shell=shell}
+ var railShadeDocument=UUID().uuidString;var web:WKWebView?;private var observers:[NSObjectProtocol]=[]
+ init(_ shell:UIView){self.shell=shell
+  observers.append(NotificationCenter.default.addObserver(forName:UIApplication.willResignActiveNotification,object:nil,queue:.main){ [weak self] _ in
+`+resign+String.raw`
+  })
+  observers.append(NotificationCenter.default.addObserver(forName:UIApplication.didEnterBackgroundNotification,object:nil,queue:.main){ [weak self] _ in
+`+entered+String.raw`
+  })
+  observers.append(NotificationCenter.default.addObserver(forName:UIApplication.didBecomeActiveNotification,object:nil,queue:.main){ [weak self] _ in
+`+became+String.raw`
+  })
+ }
+ deinit{for observer in observers{NotificationCenter.default.removeObserver(observer)}}
+ func layout(){updateRailShadeFrame()}
  func refresh(){updateRailShadeFrame()}
+ func resetShade(){resetRailShade()}
+ func hideAll(preservingShade:Bool=false){if !preservingShade{railShade.view.isHidden=true}}
  func setPresentation(document:String,sequence:Int,allowed:Bool,cover:UIColor?)throws{throw RooomAdError.invalidRequest}
  func commitPresentation(document:String,sequence:Int)throws{throw RooomAdError.invalidRequest}
  func abortPresentation(document:String,sequence:Int){}
-`+set+'\n'+frame+String.raw`
+`+set+'\n'+frame+'\n'+background+'\n'+resetShade+String.raw`
 }
 private final class ProbeBridge { let webView:WKWebView?;init(_ web:WKWebView){webView=web} }
 private func rect(_ r:CGRect)->[String:Double]{["x":Double(r.minX),"y":Double(r.minY),"width":Double(r.width),"height":Double(r.height)]}
@@ -48,7 +65,7 @@ private final class ProbeController:UIViewController,WKNavigationDelegate,WKScri
   // The second about-origin handler exists only to test trusted-handler refusal;
   // the actual shipped isolated rail has no privileged handler.
   rail.configuration.userContentController.addScriptMessageHandler(self,contentWorld:.page,name:"rooomMonetization")
-  bridge=ProbeBridge(main);monetization=ProbeEngine(shell)
+  bridge=ProbeBridge(main);monetization=ProbeEngine(shell);engine.web=main
  }
  override func viewDidAppear(_ animated:Bool){super.viewDidAppear(animated);guard !started else{return};started=true;Task{@MainActor in do{try await runProbe()}catch{failures.append(String(describing:error))};finish()}}
  private func check(_ condition:Bool,_ label:String){assertions+=1;if !condition{failures.append(label)}}
@@ -70,8 +87,9 @@ private final class ProbeController:UIViewController,WKNavigationDelegate,WKScri
  private func rejects(_ label:String,_ body:()throws->Void){do{try body();check(false,label)}catch{check(true,label)}}
  private func runProbe()async throws{
   check(UIDevice.current.userInterfaceIdiom == .pad,"iPad simulator required");try await load(main);try await load(rail)
-  let mainIdentity=ObjectIdentifier(main!),railIdentity=ObjectIdentifier(rail!),m=main.frame,r=rail.frame,doc=engine.presentation.documentId
-  check(engine.presentation.set(document:doc,sequence:1,allowed:true),"fixture allowed");check(engine.presentation.commit(document:doc,sequence:1),"fixture committed");engine.reservation=RooomAdInsets(left:316)
+  let mainIdentity=ObjectIdentifier(main!),railIdentity=ObjectIdentifier(rail!),m=main.frame,r=rail.frame,permissionDoc=engine.presentation.documentId
+  var doc=engine.railShadeDocument
+  check(engine.presentation.set(document:permissionDoc,sequence:1,allowed:true),"fixture allowed");check(engine.presentation.commit(document:permissionDoc,sequence:1),"fixture committed");engine.reservation=RooomAdInsets(left:316)
   let snapshot=try await command(main,["version":1,"op":"presentation","command":"shadeSnapshot"])
   check(main.url?.absoluteString=="https://rooom-talk.com/","offline inline main document has actual trusted URL")
   check(snapshot["accepted"] as? Bool == true,"real trusted HTTPS-origin WK snapshot accepted")
@@ -95,18 +113,44 @@ private final class ProbeController:UIViewController,WKNavigationDelegate,WKScri
   try engine.setRailShade(document:doc,sequence:3,rgba:[5,8,12,0.73],leaseMilliseconds:5000);let started=ProcessInfo.processInfo.systemUptime;await pause(1_000_000_000);check(!cover.isHidden && engine.railShade.rgba != nil,"five-second lease not expired at one second");await pause(4_350_000_000)
   for _ in 0..<30{if engine.railShade.rgba==nil{break};await pause(50_000_000)}
   check(ProcessInfo.processInfo.systemUptime-started>=5,"real five-second wait");check(cover.isHidden && engine.railShade.rgba==nil && engine.railShade.sequence==3,"real common-runloop lease expires without sequence reset");try await retained(m,r,"lease expiry");mark("actual-five-second-expiry")
-  try engine.setRailShade(document:doc,sequence:4,rgba:[5,8,12,0.73],leaseMilliseconds:5000);engine.railShade.suspend();check(cover.isHidden && engine.railShade.rgba != nil,"suspend hides but retains Web pixels");await pause(150_000_000);engine.railShade.resume();engine.refresh();check(!cover.isHidden && engine.railShade.sequence==4,"resume preserves same visual state/sequence");try await retained(m,r,"suspend/resume");mark("generic-suspend-resume")
+  try engine.setRailShade(document:doc,sequence:4,rgba:[5,8,12,0.73],leaseMilliseconds:700)
+  await pause(180_000_000);NotificationCenter.default.post(name:UIApplication.willResignActiveNotification,object:nil)
+  check(!cover.isHidden && engine.railShade.rgba != nil,"actual resign callback preserves Web pixels")
+  await pause(750_000_000);NotificationCenter.default.post(name:UIApplication.willResignActiveNotification,object:nil);engine.refresh()
+  check(!cover.isHidden && engine.railShade.sequence==4,"duplicate resign and layout preserve frozen pixels beyond wallclock lease")
+  NotificationCenter.default.post(name:UIApplication.didBecomeActiveNotification,object:nil)
+  await pause(180_000_000);check(!cover.isHidden,"resume preserves unconsumed part of Web lease")
+  NotificationCenter.default.post(name:UIApplication.didBecomeActiveNotification,object:nil)
+  await pause(450_000_000);check(cover.isHidden && engine.railShade.rgba==nil,"resumed lease expires without Native five-second extension")
+  try await retained(m,r,"inactive lease freeze/resume");mark("actual-notification-lease-freeze-no-extension")
+  try engine.setRailShade(document:doc,sequence:5,rgba:[5,8,12,0.73],leaseMilliseconds:5000)
+  NotificationCenter.default.post(name:UIApplication.willResignActiveNotification,object:nil)
+  NotificationCenter.default.post(name:UIApplication.didEnterBackgroundNotification,object:nil)
+  check(cover.isHidden && engine.railShade.rgba==nil && engine.railShade.sequence==5,"actual background callback discards old pixels but preserves ordering")
+  check(engine.railShadeDocument != doc && engine.presentation.documentId==permissionDoc && engine.reservation.left==316,"shade background identity preserves permission and width")
+  NotificationCenter.default.post(name:UIApplication.didBecomeActiveNotification,object:nil)
+  check(cover.isHidden && engine.railShade.rgba==nil,"foreground callback cannot restore cached ON")
+  let stale=try await command(main,["version":1,"op":"presentation","command":"shade","documentId":doc,"sequence":99,"enabled":true,"rgba":[5.0,8.0,12.0,0.73],"leaseMilliseconds":5000.0])
+  check(stale["accepted"] as? Bool == false && cover.isHidden,"real trusted WK rejects pre-background queued ON identity")
+  let fresh=try await command(main,["version":1,"op":"presentation","command":"shadeSnapshot"])
+  check(fresh["accepted"] as? Bool == true,"fresh foreground snapshot accepted")
+  guard let freshState=fresh["value"] as? [String:Any],let freshDoc=freshState["documentId"] as? String else{throw NSError(domain:"Missing fresh shade identity",code:3)}
+  check(freshDoc != doc && freshDoc==engine.railShadeDocument,"real WK snapshot returns rotated shade identity")
+  doc=freshDoc
+  let latest=try await command(main,["version":1,"op":"presentation","command":"shade","documentId":doc,"sequence":6,"enabled":true,"rgba":[5.0,8.0,12.0,0.73],"leaseMilliseconds":5000.0])
+  check(latest["accepted"] as? Bool == true && !cover.isHidden,"only fresh Web ON restores latest pixels")
+  try await retained(m,r,"background fresh-identity recovery");mark("actual-notification-background-stale-WK-rejected")
   shell.frame.size=CGSize(width:768,height:1024);main.frame=CGRect(x:0,y:0,width:768,height:1024);engine.reservation=RooomAdInsets();engine.refresh();check(cover.isHidden,"portrait has no rail cover");check(engine.railShade.rgba != nil,"portrait retains Web desired pixels");mark("controlled-portrait-resize")
   shell.frame.size=CGSize(width:1024,height:768);main.frame=m;engine.reservation=RooomAdInsets(left:316);engine.refresh();check(!cover.isHidden && cover.frame==r,"return landscape follows existing reservation");try await retained(m,r,"resize return");mark("controlled-landscape-return")
   let response=try await command(rail,["version":1,"op":"presentation","command":"shadeSnapshot"]);check(response["accepted"] as? Bool == false,"actual trusted handler rejects offline about origin")
   let child=try await asyncJS(main,"return await new Promise(resolve=>{let frame;const timer=setTimeout(()=>{removeEventListener('message',receive);frame?.remove();resolve('timeout');},3000);function receive(e){if(e.data?.railShadeChild!==true)return;clearTimeout(timer);removeEventListener('message',receive);frame.remove();resolve(e.data.accepted?'accepted':'rejected');}addEventListener('message',receive);frame=document.createElement('iframe');frame.srcdoc=\"<script>window.webkit.messageHandlers.rooomMonetization.postMessage({version:1,op:'presentation',command:'shadeSnapshot'}).then(()=>parent.postMessage({railShadeChild:true,accepted:true},'*'),()=>parent.postMessage({railShadeChild:true,accepted:false},'*'))</script>\";document.body.append(frame);});")
   check(child as? String == "rejected","actual trusted handler rejects real same-origin child frame");mark("real-WK-about-origin-and-child-frame-rejection")
-  engine.presentation.reset();engine.railShade.reset();engine.refresh();check(cover.isHidden && cover.superview==nil && engine.railShade.sequence==0,"actual document reset helpers clear/detach");rejects("prior document cannot set after reset"){try engine.setRailShade(document:doc,sequence:100,rgba:[5,8,12,0.73],leaseMilliseconds:5000)}
+  engine.presentation.reset();engine.resetShade();engine.refresh();check(cover.isHidden && cover.superview==nil && engine.railShade.sequence==0,"actual document reset helpers clear/detach");rejects("prior document cannot set after reset"){try engine.setRailShade(document:doc,sequence:100,rgba:[5,8,12,0.73],leaseMilliseconds:5000)}
   check(ObjectIdentifier(main!)==mainIdentity && ObjectIdentifier(rail!)==railIdentity,"WK object identities retained");try await retained(m,r,"document reset helpers");check(blockedRequests==0,"no external/provider request attempted");mark("document-reset-prior-document")
  }
  private func finish(){guard !finished else{return};finished=true;main.configuration.userContentController.removeScriptMessageHandler(forName:"rooomMonetization",contentWorld:.page);rail.configuration.userContentController.removeScriptMessageHandler(forName:"rooomMonetization",contentWorld:.page)
   let report:[String:Any]=["ok":failures.isEmpty,"failures":failures,"assertions":assertions,"cases":cases,"loads":loadCounts,"blockedRequests":blockedRequests,"cloudWrites":0,
-   "scope":"Actual extracted RooomRailShade class, engine set/frame methods, permission state and trusted handler; real UIKit UIColor/UIView z-order/hit-test and two WKWebViews with retained DOM. Device/reservation/main frame assignment, op-envelope dispatch and unused presentation handlers are fixtures. The main page uses offline loadHTMLString with exact HTTPS baseURL, exercising real WK frameInfo/securityOrigin/web.url for snapshot/ON/OFF/reordered/invalid-alpha/old-document messages. The real handler must reject the about-origin document and same-origin srcdoc child; failure is not replaced with mocked transport. Real five-second Timer expiry and generic suspend/resume are exercised; lifecycle notification delivery, full SDK/Capacitor monetization, actual app first paint, physical OS rotation and TestFlight are NOT proven. No advertising/backend/SDK linked; inline CSP default/connect/img none and frame self only for srcdoc. Only about navigations and the initial pending trusted inline base URL are permitted; no remote page is loaded."]
+   "scope":"Actual extracted RooomRailShade class, engine set/frame methods, permission state and trusted handler; real UIKit UIColor/UIView z-order/hit-test and two WKWebViews with retained DOM. Device/reservation/main frame assignment, op-envelope dispatch and unused presentation handlers are fixtures. The main page uses offline loadHTMLString with exact HTTPS baseURL, exercising real WK frameInfo/securityOrigin/web.url for snapshot/ON/OFF/reordered/invalid-alpha/old-document messages. The real handler must reject the about-origin document and same-origin srcdoc child; failure is not replaced with mocked transport. Real Timer expiry and actual extracted lifecycle callbacks run through posted UIKit notifications in an active offline fixture. Inactive lease freeze, duplicate callbacks, remaining-only resume, background invalidation and real WK old-identity rejection are checked. Actual OS Control Center/background delivery, full SDK/Capacitor monetization, first paint, physical OS rotation and TestFlight are NOT proven. No advertising/backend/SDK linked; inline CSP default/connect/img none and frame self only for srcdoc. Only about navigations and the initial pending trusted inline base URL are permitted; no remote page is loaded."]
   do{let folder=FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0];try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true);try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]).write(to:folder.appendingPathComponent("rail-shade-report.json"),options:.atomic)}catch{NSLog("Probe report failure %@",String(describing:error))}
  }
 `+handler+String.raw`
@@ -117,7 +161,7 @@ private final class ProbeController:UIViewController,WKNavigationDelegate,WKScri
 }
 `;
 assert.doesNotMatch(swift,/import (?:ImobileSdkAds|Firebase|Capacitor)/);
-const extraction={shadeSha256:hash(shade),engineMethodsSha256:hash(set+'\n'+frame),handlerSha256:hash(handler),permissionSha256:hash(permission),swiftSha256:hash(swift)};
+const extraction={shadeSha256:hash(shade),engineMethodsSha256:hash(set+'\n'+frame),handlerSha256:hash(handler),lifecycleSha256:hash(resign+entered+became+background+resetShade),permissionSha256:hash(permission),swiftSha256:hash(swift)};
 if(process.argv.includes('--extract-only')||process.platform!=='darwin'){
  const file=process.env.ROOOM_RAIL_SHADE_PROBE_SWIFT;if(file){fs.mkdirSync(path.dirname(path.resolve(file)),{recursive:true});fs.writeFileSync(file,swift);}console.log(JSON.stringify({extraction:'PASS',...extraction,simulator:'NOT RUN',generated:file||null}));
 }else{
