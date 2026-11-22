@@ -39,7 +39,7 @@ const slotMethods=['func start()', 'func showBannerIfNeeded(', 'private func fai
  'func imobileSdkAdsSpotDidShow(', 'func release()', 'deinit'];
 const ownerMethods=['func configure(', 'private func releaseCreatives()', 'private func beginDocument()',
  'func clear()', 'private func setReservation(', 'func setKeyboardVisible(', 'func hideFeed()',
- 'private func hideAll()', 'private func entry(', 'private func phoneReservedInsets(', 'func layout()', 'fileprivate func slotChanged('];
+ 'private func hideAll()', 'private func entry(', 'private func phoneReservedInsets(', 'func layout()', 'fileprivate func slotChanged(', 'func setRailShade(', 'private func updateRailShadeFrame()'];
 const foundation=source.split('#if ROOOM_IMOBILE_ADS')[0];
 
 const doubles=String.raw`
@@ -137,6 +137,14 @@ function swiftProgram(useBaseline=false){
  const slotClass=chosenSlot.slice(0,chosenSlot.indexOf('func start()'))+
   slotMethods.map(m=>block(chosenSlot,m)).join('\n')+'\n}\n';
  return foundation+doubles+slotClass+block(owner,'struct WebPresentationPermission')+String.raw`
+// Drawing is isolated here; real overlay pixels/lifetime have their own UIKit probe.
+private final class RailShadeBoundary {
+    let view = UIView()
+    private var hasColor = false
+    func set(sequence: Int, rgba: [Double]?, leaseMilliseconds: Double) throws { hasColor = rgba != nil }
+    func place(in shell: UIView, frame: CGRect?) { view.isHidden = !hasColor || frame == nil; if let frame { view.frame = frame; if view.superview !== shell { shell.addSubview(view) } } }
+    func reset() { clear(); view.removeFromSuperview() } ; func clear() { hasColor = false; view.isHidden = true } ; func suspend() { view.isHidden = true }
+}
 private final class RooomMonetization {
     let device: String
     var controller: FakeController? = FakeController()
@@ -145,6 +153,7 @@ private final class RooomMonetization {
     private var config = RooomAdConfig.off, initialLayout = RooomAdConfig.off
     private var presentation = WebPresentationPermission()
     private var presentationLease: Timer?
+    private let railShade = RailShadeBoundary()
     private var entries: [String: RooomSdkSlot] = [:]
     private var tabletWebAd: RooomTabletWebAd?
     private var keyboard = false, layingOut = false
@@ -163,6 +172,8 @@ private final class RooomMonetization {
     func testSeed(_ seed: RooomAdConfig) { initialLayout = seed }
     func testBeginDocument() { beginDocument() }
     func testEntry(_ key: String = "phone") -> RooomSdkSlot { entries[key]! }
+    func testSetShade(_ color: [Double]?, _ sequence: Int) throws { try setRailShade(document: presentation.documentId, sequence: sequence, rgba: color, leaseMilliseconds: 5000) }
+    var testShadeView: UIView { railShade.view }
     func testNavigate(_ url: String, config: RooomAdConfig) throws {
         beginDocument(); web!.url = URL(string: url); testGrant(); try configure(config)
     }
@@ -330,6 +341,14 @@ try runCase("iPad rectangles, Web728 and failure reservation remain unchanged") 
     try owner.configure(config)
     require(count("show:") == 2 && owner.reservation.left == 316 && owner.reservation.bottom == 0, "two landscape rectangles")
     require(ImobileSdkAds.views.allSatisfy { $0.frame.size == CGSize(width: 300, height: 250) }, "no resized creative")
+    let priorCalls = ImobileSdkAds.calls, priorViews = ImobileSdkAds.views, priorFrames = priorViews.map { $0.frame }, priorReservation = owner.reservation
+    try owner.testSetShade([5,8,12,0.73], 1)
+    require(!owner.testShadeView.isHidden && owner.testShadeView.frame == CGRect(x: 0, y: 0, width: 316, height: 820), "actual shade/frame methods cover existing reservation")
+    try owner.testSetShade([9,12,15,0.4], 2)
+    try owner.testSetShade(nil, 3)
+    require(owner.testShadeView.isHidden && owner.reservation == priorReservation, "shade OFF preserves reservation")
+    require(ImobileSdkAds.calls == priorCalls, "shade ON/color/OFF must add zero SDK calls")
+    require(ImobileSdkAds.views.count == priorViews.count && zip(ImobileSdkAds.views,priorViews).allSatisfy { $0 === $1 } && ImobileSdkAds.views.map { $0.frame } == priorFrames, "shade cannot recreate or move SDK creatives")
     owner.testEntry("upper").imobileSdkAdsSpot(upper.spotId, didFailWithValue: .notFound); DispatchQueue.main.drain()
     require(owner.reservation.left == 316, "iPad failure still preserves rail")
     owner.shell!.frame = CGRect(x: 0, y: 0, width: 820, height: 1180); owner.layout()

@@ -155,15 +155,21 @@ if(process.argv.includes('--extract-only')||process.platform!=='darwin'){
  const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'rooom-presentation-probe-')),app=path.join(tmp,'OfflinePresentationProbe.app');
  const bundle='com.rooom.offline.presentationprobe.'+crypto.randomBytes(4).toString('hex');
  const run=(command,args,timeout=120000)=>{const r=cp.spawnSync(command,args,{encoding:'utf8',timeout,maxBuffer:8e6});assert.equal(r.status,0,`${command}\n${r.error?.message||''}\n${r.stdout||''}\n${r.stderr||''}`);return r.stdout.trim();};
+ // Resolve the toolchain before starting CoreSimulator. The prior timeout
+ // was SDK lookup ETIMEDOUT; contention is a hypothesis, not a product finding.
+ const sdk=run('xcrun',['--sdk','iphonesimulator','--show-sdk-path']);
+ const compiler=run('xcrun',['--sdk','iphonesimulator','--find','swiftc']);
  const available=JSON.parse(run('xcrun',['simctl','list','devices','available','--json']));
  const devices=Object.entries(available.devices).filter(([runtime])=>runtime.includes('.iOS-')).flatMap(([runtime,ds])=>ds.filter(d=>d.isAvailable!==false&&d.name.includes('iPad')).map(d=>({...d,runtime})));
  assert(devices.length,'No existing iPad runtime; this script never downloads one');devices.sort((a,b)=>Number(b.state==='Booted')-Number(a.state==='Booted'));
- const device=devices[0],bootedHere=device.state!=='Booted';let installed=false;
+ const device=devices[0],bootedHere=device.state!=='Booted';let installed=false,startedHere=false;
  try{
-  if(bootedHere)run('xcrun',['simctl','boot',device.udid]);run('xcrun',['simctl','bootstatus',device.udid,'-b'],240000);
-  const sdk=run('xcrun',['--sdk','iphonesimulator','--show-sdk-path']);fs.mkdirSync(app);fs.writeFileSync(path.join(tmp,'Probe.swift'),swift);
+  fs.mkdirSync(app);fs.writeFileSync(path.join(tmp,'Probe.swift'),swift);
   fs.writeFileSync(path.join(app,'Info.plist'),`<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>${bundle}</string><key>CFBundleExecutable</key><string>OfflinePresentationProbe</string><key>CFBundleName</key><string>Offline Presentation Probe</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleVersion</key><string>1</string><key>CFBundleShortVersionString</key><string>1.0</string><key>MinimumOSVersion</key><string>15.0</string><key>UIDeviceFamily</key><array><integer>2</integer></array><key>UIRequiresFullScreen</key><true/><key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array><key>UILaunchScreen</key><dict/></dict></plist>`);
-  run('xcrun',['--sdk','iphonesimulator','swiftc','-swift-version','5','-parse-as-library','-target',`${process.arch==='arm64'?'arm64':'x86_64'}-apple-ios15.0-simulator`,'-sdk',sdk,'-module-cache-path',path.join(tmp,'module-cache'),path.join(tmp,'Probe.swift'),'-o',path.join(app,'OfflinePresentationProbe'),'-framework','UIKit','-framework','WebKit','-framework','QuartzCore']);
+  run(compiler,['-swift-version','5','-parse-as-library','-target',`${process.arch==='arm64'?'arm64':'x86_64'}-apple-ios15.0-simulator`,'-sdk',sdk,'-module-cache-path',path.join(tmp,'module-cache'),path.join(tmp,'Probe.swift'),'-o',path.join(app,'OfflinePresentationProbe'),'-framework','UIKit','-framework','WebKit','-framework','QuartzCore']);
+  // Compile must succeed before boot; no assertion, timeout or signing bypass.
+  if(bootedHere){run('xcrun',['simctl','boot',device.udid]);startedHere=true;}
+  run('xcrun',['simctl','bootstatus',device.udid,'-b'],240000);
   run('xcrun',['simctl','install',device.udid,app]);installed=true;run('xcrun',['simctl','launch',device.udid,bundle]);
   const data=run('xcrun',['simctl','get_app_container',device.udid,bundle,'data']),file=path.join(data,'Documents','presentation-report.json'),deadline=Date.now()+90000;
   while(!fs.existsSync(file)&&Date.now()<deadline)await new Promise(r=>setTimeout(r,250));
@@ -172,6 +178,6 @@ if(process.argv.includes('--extract-only')||process.platform!=='darwin'){
   const output=path.resolve(process.env.ROOOM_PRESENTATION_PROBE_REPORT||path.join(tmp,'report.json'));fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify({ok:report.ok,output,failures:report.failures,scope:report.scope}));assert.equal(report.ok,true,'Offline UIKit/WK probe failed');
  }finally{
   if(installed){cp.spawnSync('xcrun',['simctl','terminate',device.udid,bundle]);cp.spawnSync('xcrun',['simctl','uninstall',device.udid,bundle]);}
-  if(bootedHere)cp.spawnSync('xcrun',['simctl','shutdown',device.udid]);
+  if(startedHere)cp.spawnSync('xcrun',['simctl','shutdown',device.udid]);
  }
 }

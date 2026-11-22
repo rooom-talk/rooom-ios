@@ -208,22 +208,25 @@ if(process.argv.includes('--extract-only')||process.platform!=='darwin'){
   assert.equal(r.status,0,`${command} ${args.join(' ')}\n${r.error?.message||''}\n${r.stdout||''}\n${r.stderr||''}`);
   return r.stdout.trim();
  };
+ // Resolve the toolchain before starting CoreSimulator. The prior timeout
+ // was SDK lookup ETIMEDOUT; contention is a hypothesis, not a product finding.
+ const sdk=run('xcrun',['--sdk','iphonesimulator','--show-sdk-path']);
+ const compiler=run('xcrun',['--sdk','iphonesimulator','--find','swiftc']);
  const list=JSON.parse(run('xcrun',['simctl','list','devices','available','--json']));
  const devices=Object.entries(list.devices).filter(([runtime])=>runtime.includes('.iOS-')).flatMap(([runtime,ds])=>
   ds.filter(d=>d.isAvailable!==false&&d.name.includes('iPad')).map(d=>({...d,runtime})));
  assert.ok(devices.length,'No available iPad simulator. This test never downloads runtimes.');
  devices.sort((a,b)=>Number(b.state==='Booted')-Number(a.state==='Booted'));
- const selected=devices[0],bootedHere=selected.state!=='Booted';let installed=false;
+ const selected=devices[0],bootedHere=selected.state!=='Booted';let installed=false,startedHere=false;
  try{
-  if(bootedHere)run('xcrun',['simctl','boot',selected.udid]);
-  run('xcrun',['simctl','bootstatus',selected.udid,'-b'],240000);
-  const sdk=run('xcrun',['--sdk','iphonesimulator','--show-sdk-path']);
   fs.mkdirSync(app);fs.writeFileSync(path.join(tmp,'Probe.swift'),swift);
   const plist=`<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>${bundle}</string><key>CFBundleExecutable</key><string>OfflineRotationProbe</string><key>CFBundleName</key><string>Offline Rotation Probe</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleVersion</key><string>1</string><key>CFBundleShortVersionString</key><string>1.0</string><key>MinimumOSVersion</key><string>15.0</string><key>UIDeviceFamily</key><array><integer>2</integer></array><key>UIRequiresFullScreen</key><true/><key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array><key>UILaunchScreen</key><dict/></dict></plist>`;
   fs.writeFileSync(path.join(app,'Info.plist'),plist);
-  run('xcrun',['--sdk','iphonesimulator','swiftc','-swift-version','5','-parse-as-library','-target',`${process.arch==='arm64'?'arm64':'x86_64'}-apple-ios15.0-simulator`,
+  run(compiler,['-swift-version','5','-parse-as-library','-target',`${process.arch==='arm64'?'arm64':'x86_64'}-apple-ios15.0-simulator`,
    '-sdk',sdk,'-module-cache-path',path.join(tmp,'module-cache'),path.join(tmp,'Probe.swift'),'-o',path.join(app,'OfflineRotationProbe'),'-framework','UIKit','-framework','WebKit','-framework','QuartzCore']);
-  run('/usr/bin/codesign',['--force','--sign','-','--timestamp=none',app]);
+  // Compile must succeed before boot; no assertion, timeout or signing bypass.
+  if(bootedHere){run('xcrun',['simctl','boot',selected.udid]);startedHere=true;}
+  run('xcrun',['simctl','bootstatus',selected.udid,'-b'],240000);
   run('xcrun',['simctl','install',selected.udid,app]);installed=true;
   run('xcrun',['simctl','launch',selected.udid,bundle]);
   const data=run('xcrun',['simctl','get_app_container',selected.udid,bundle,'data']),output=path.join(data,'Documents','rotation-report.json');
@@ -238,6 +241,6 @@ if(process.argv.includes('--extract-only')||process.platform!=='darwin'){
   assert.equal(report.ok,true,'Offline UIKit geometry probe failed; see report');
  }finally{
   if(installed){cp.spawnSync('xcrun',['simctl','terminate',selected.udid,bundle],{encoding:'utf8'});cp.spawnSync('xcrun',['simctl','uninstall',selected.udid,bundle],{encoding:'utf8'});}
-  if(bootedHere)cp.spawnSync('xcrun',['simctl','shutdown',selected.udid],{encoding:'utf8'});
+  if(startedHere)cp.spawnSync('xcrun',['simctl','shutdown',selected.udid],{encoding:'utf8'});
  }
 }
