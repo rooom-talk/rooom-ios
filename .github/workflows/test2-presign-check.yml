@@ -31,6 +31,21 @@ on:
 permissions:
   contents: read
 jobs:
+  profile-runtime:
+    if: github.event_name != 'workflow_dispatch' || inputs.confirmation == 'SYNTHETIC_ONLY'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha || github.sha }}
+          persist-credentials: false
+      - name: Inspect system profile API availability without credentials
+        run: swift tests/test2-presign-runtime.swift
   presign-gate:
     if: github.event_name != 'workflow_dispatch' || (inputs.confirmation != 'DIAGNOSE_REAL_CMS_ONLY' && inputs.confirmation != 'INSPECT_CMS_CERTIFICATES_ONLY')
     runs-on: macos-15
