@@ -278,7 +278,7 @@ func profileIssues(_ p: [String: Any], der: [String: Any], leaf: Data, team: Str
     let uuid=p["UUID"] as? String
     check(uuid?.range(of:"^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$",options:.regularExpression) != nil,.uuid_format)
     if let start=p["CreationDate"] as? Date,let end=p["ExpirationDate"] as? Date { check(start <= now && now < end && start < end,.validity) } else { issues.append(.validity) }
-    check(p["Platform"] as? [String] == ["iOS"],.platform);check(p["TeamIdentifier"] as? [String] == [team],.team)
+    check((p["Platform"] as? [String])?.contains("iOS") == true,.platform);check(p["TeamIdentifier"] as? [String] == [team],.team)
     check((p["Platform"] as? [String])?.contains("iOS") == true,.platform_missing_ios)
     let prefixes=p["ApplicationIdentifierPrefix"] as? [String]
     check(prefixes?.count == 1 && prefixes?.first?.range(of:"^[A-Z0-9]{10}$",options:.regularExpression) != nil,.prefix)
@@ -313,7 +313,7 @@ func validateProfile(_ p: [String: Any], der: [String: Any], leaf: Data, team: S
           let entitlement = p["Entitlements"] as? [String: Any], let innerEntitlement = der["Entitlements"] as? [String: Any],
           let certificates = p["DeveloperCertificates"] as? [Data], certificates.count == 1,
           let checksums = der["DeveloperCertificates"] as? [Data], checksums.count == 1 else { throw GateError.profile }
-    try require(start <= now && now < end && start < end && platforms == ["iOS"] && teams == [team], .profile)
+    try require(start <= now && now < end && start < end && platforms.contains("iOS") && teams == [team], .profile)
     try require(prefixes[0].range(of: "^[A-Z0-9]{10}$", options: .regularExpression) != nil, .profile)
     try require(certificates[0] == leaf && checksums[0] == Data(SHA256.hash(data: leaf)), .identity)
     try require(entitlement["application-identifier"] as? String == prefixes[0] + ".com.rooom.talk" && entitlement["com.apple.developer.team-identifier"] as? String == team, .entitlement)

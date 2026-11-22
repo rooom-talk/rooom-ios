@@ -21,6 +21,10 @@ import Darwin
         func profile(_ p: [String: Any], _ d: [String: Any], _ requested: [String: Any] = ["aps-environment":"production"]) throws { _ = try validateProfile(p, der:d, leaf:leaf, team:team, now:now, requested:requested) }
         try check { try profile(p,d,requested) } // Legacy prefix is deliberately not Team ID.
         try check { try require(profileIssues(p,der:d,leaf:leaf,team:team,now:now,requested:requested).isEmpty,.profile) }
+        try check { var a=p,b=d;a["Platform"]=["iOS","visionOS"];b["Platform"]=["iOS","visionOS"];try profile(a,b) }
+        try rejects { var a=p,b=d;a["Platform"]=["OSX","visionOS"];b["Platform"]=["OSX","visionOS"];try profile(a,b) }
+        try rejects { var b=d;b["Platform"]=["iOS","visionOS"];try profile(p,b) }
+        try rejects { var a=p,b=d;a["Platform"]=["iOS",1] as [Any];b["Platform"]=["iOS",1] as [Any];try profile(a,b) }
         try check { var missing=d;missing.removeValue(forKey:"UUID");try require(profileIssues(p,der:missing,leaf:leaf,team:team,now:now,requested:requested) == [.uuid_inner_missing],.profile) }
         for key in ["UUID","CreationDate","ExpirationDate","Platform","TeamIdentifier","ApplicationIdentifierPrefix","Entitlements","DeveloperCertificates"] {
             try rejects { var bad=p; bad.removeValue(forKey:key); try profile(bad,d) }
