@@ -81,7 +81,7 @@ import Darwin
         try rejects { try evaluate(trust!,anchors:roots,codeSigning:true,now:now) }
         try rejects { try evaluate(trust!,anchors:[ca],codeSigning:false,now:now,revocation:true) }
         print("SYNTHETIC phase: CMS")
-        for libraryPath in ["/usr/lib/libCoreTrust.dylib", "/System/Library/PrivateFrameworks/CoreTrust.framework/CoreTrust", "/System/Library/PrivateFrameworks/CoreTrust.framework/Versions/A/CoreTrust"] {
+        for libraryPath in ["/usr/lib/libmis.dylib"] {
             if let handle=dlopen(libraryPath,RTLD_NOW | RTLD_LOCAL) {
                 let hasAPI = dlsym(handle,"CTEvaluateProvisioningProfile") != nil
                 print("SYNTHETIC CoreTrust probe: \(libraryPath) loaded; profile API \(hasAPI)")

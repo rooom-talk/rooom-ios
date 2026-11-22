@@ -24,6 +24,8 @@ OID `1.2.840.113635.100.12.19` has not been independently mapped to a published 
 
 The public CoreTrust header does not guarantee macOS availability, expiration or revocation semantics. Therefore those existing checks remain mandatory. Apple [CMSDecoder implementation](https://github.com/apple-oss-distributions/Security/blob/main/OSX/libsecurity_cms/lib/CMSDecoder.cpp#L451) verifies the CMS signature even when certificate trust is evaluated separately.
 
+The initial credential-free macOS 15.8.2 test failed closed because `/usr/lib/libCoreTrust.dylib` was not available. Runtime probe job [137153534276](https://github.com/rooom-talk/rooom-ios/actions/runs/45004689163/job/137153534276) established that both `CTEvaluateProvisioningProfile` and `CTVerifyAmfiCertificateChain` are exported through the absolute system image `/usr/lib/libmis.dylib`. The implementation now uses that image, with no search-path or weaker-policy fallback. Runtime probe success is availability evidence only, not profile authorization.
+
 ## Validation status
 
 Pending real macOS tests, real-material validation-only confirmation and independent re-audit. This document does not grant deployment approval. Product Native code, ad SDK/placement, PR29 shade, Web, Firebase and the existing distribution workflow are unchanged. No app signing, IPA export or TestFlight upload is authorized by this change.

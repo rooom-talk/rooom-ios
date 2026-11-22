@@ -188,7 +188,8 @@ func checkProfilePolicy(_ data: Data, content: Data, evaluator: ProfilePolicyEva
     }
 }
 func verifyProfilePurpose(_ data: Data, content: Data) throws {
-    let library = dlopen("/usr/lib/libCoreTrust.dylib", RTLD_NOW | RTLD_LOCAL)
+    // macOS exposes these CoreTrust functions through the system libmis image.
+    let library = dlopen("/usr/lib/libmis.dylib", RTLD_NOW | RTLD_LOCAL)
     guard let library else { throw CMSFault(layer: .inner, stage: .profile_policy_load) }
     defer { dlclose(library) }
     guard let symbol = dlsym(library, "CTEvaluateProvisioningProfile") else { throw CMSFault(layer: .inner, stage: .profile_policy_symbol) }
