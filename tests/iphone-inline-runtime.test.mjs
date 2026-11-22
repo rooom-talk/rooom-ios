@@ -137,6 +137,10 @@ function swiftProgram(useBaseline=false){
  const slotClass=chosenSlot.slice(0,chosenSlot.indexOf('func start()'))+
   slotMethods.map(m=>block(chosenSlot,m)).join('\n')+'\n}\n';
  return foundation+doubles+slotClass+block(owner,'struct WebPresentationPermission')+String.raw`
+// Drawing is isolated here; real overlay pixels/lifetime have their own UIKit probe.
+private final class RailShadeBoundary {
+    func reset() {} ; func clear() {} ; func suspend() {}
+}
 private final class RooomMonetization {
     let device: String
     var controller: FakeController? = FakeController()
@@ -145,6 +149,8 @@ private final class RooomMonetization {
     private var config = RooomAdConfig.off, initialLayout = RooomAdConfig.off
     private var presentation = WebPresentationPermission()
     private var presentationLease: Timer?
+    private let railShade = RailShadeBoundary()
+    private func updateRailShadeFrame() {}
     private var entries: [String: RooomSdkSlot] = [:]
     private var tabletWebAd: RooomTabletWebAd?
     private var keyboard = false, layingOut = false
