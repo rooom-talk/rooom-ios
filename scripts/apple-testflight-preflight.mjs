@@ -59,7 +59,7 @@ if(process.argv.includes('--status-only')||process.argv.includes('--status-wait'
  assert(!['FAILED','INVALID'].includes(result.processingState),'Apple processing rejected uploaded build');
  process.exit(0);
 }
-if(env.TARGET_ENV==='test2'){const version=await checkTest2Version(api);if(env.GITHUB_ENV)fs.appendFileSync(env.GITHUB_ENV,'ROOOM_MARKETING_VERSION='+version+'\n');console.log('TEST2 fresh marketing version eligibility PASS: '+version);}
+if(env.TARGET_ENV==='test2'){const version=await checkTest2Version(api);if(env.GITHUB_ENV)fs.appendFileSync(env.GITHUB_ENV,'ROOOM_MARKETING_VERSION='+version+'\n');console.log('TEST2 marketing version eligibility PASS: '+version);}
 if(process.argv.includes('--version-only')){assert.equal(env.TARGET_ENV,'test2');process.exit(0);}
 let link='/v1/apps/'+encodeURIComponent(appId)+'/builds?limit=200';
 let max=0, pages=0;

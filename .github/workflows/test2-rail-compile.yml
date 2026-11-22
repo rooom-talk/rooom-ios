@@ -1,7 +1,7 @@
 name: TEST2 Web-managed rail unsigned build
 on:
   pull_request:
-    paths: ['ios/App/App/RooomImobileBanner.swift', 'scripts/prepare-test2-rail.mjs', 'tests/test2-rail-races.mjs', 'tests/rail-shade-uikit-probe.mjs', '.github/workflows/test2-rail-compile.yml']
+    paths: ['ios/App/App/RooomImobileBanner.swift', 'scripts/prepare-test2-rail.mjs', 'scripts/check-test2-archive.mjs', 'scripts/testflight-version-policy.mjs', 'scripts/apple-testflight-preflight.mjs', 'tests/testflight-*.mjs', 'tests/test2-rail-races.mjs', 'tests/rail-shade-uikit-probe.mjs', '.github/workflows/test2-rail-compile.yml']
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -42,6 +42,8 @@ jobs:
           npm run build
           npx cap sync ios
           node scripts/stage-imobile-official-sdk.mjs "$GITHUB_WORKSPACE/vendor-sdk"
+      - name: Verify TEST2 version and archive guards without Apple access
+        run: node --test tests/testflight-version.test.mjs tests/testflight-status.test.mjs tests/test2-export-declaration.test.mjs
       - name: Actual Web presentation permission state
         run: node tests/web-presentation-permission.mjs
       - name: Offline unsigned UIKit and WK geometry probe
@@ -66,6 +68,21 @@ jobs:
               CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > "$RUNNER_TEMP/build.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/build.log"; exit 1; }
             grep -F '** BUILD SUCCEEDED **' "$RUNNER_TEMP/build.log"
           done
+      - name: Archive and verify PR29 TEST2 binary without signing
+        env:
+          ROOOM_MARKETING_VERSION: '1.6.2'
+          # Validation-only identity, never reserved or uploaded to Apple.
+          ROOOM_TESTFLIGHT_BUILD_NUMBER: '100080'
+        run: |
+          set -euo pipefail
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/RoooM-test2-unsigned.xcarchive" \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) ROOOM_IMOBILE_ADS ROOOM_TEST2_RAIL' \
+            MARKETING_VERSION="$ROOOM_MARKETING_VERSION" CURRENT_PROJECT_VERSION="$ROOOM_TESTFLIGHT_BUILD_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO archive > "$RUNNER_TEMP/test2-archive.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/test2-archive.log"; exit 1; }
+          grep -F '** ARCHIVE SUCCEEDED **' "$RUNNER_TEMP/test2-archive.log"
+          node scripts/check-test2-archive.mjs "$RUNNER_TEMP/RoooM-test2-unsigned.xcarchive/Products/Applications/App.app"
+          echo 'Validation-only archive is not signed, installable, exported or uploaded.'
       - name: Boundary
         run: echo 'No signing, TestFlight upload, Store release, Hosting deploy or DB writes.'
   rail-shade-probe:
