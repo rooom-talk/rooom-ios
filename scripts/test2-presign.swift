@@ -247,6 +247,59 @@ func verifiedCMS(_ data: Data, anchors: [SecCertificate], now: Date, revocation:
     return content as Data
 }
 
+enum ProfileIssue: String, CaseIterable {
+    case uuid_outer_missing, uuid_inner_missing, uuid_mismatch, creation_outer_missing, creation_inner_missing, creation_mismatch, expiration_outer_missing, expiration_inner_missing, expiration_mismatch, platform_outer_missing, platform_inner_missing, platform_mismatch, team_outer_missing, team_inner_missing, team_mismatch, prefix_outer_missing, prefix_inner_missing, prefix_mismatch, entitlements_outer_missing, entitlements_inner_missing, entitlements_mismatch, outer_devices, inner_devices, outer_devices_nonempty, inner_devices_nonempty, outer_all_devices, inner_all_devices, outer_all_devices_not_false, inner_all_devices_not_false, uuid_format, validity, platform, platform_missing_ios, team, prefix, outer_certificates, inner_certificates, certificate_binding, checksum_binding, certificate_list_mismatch, certificate_list_duplicates, app_identifier, team_entitlement, outer_debug, inner_debug, outer_beta, inner_beta, push_environment, requested, unclassified
+}
+struct ProfileFault: Error { let issues: [ProfileIssue] }
+// Inspection-only classification AFTER validateProfile has already rejected.
+// No values, subject names, dates, IDs, certificates or arbitrary keys leave it.
+func profileIssues(_ p: [String: Any], der: [String: Any], leaf: Data, team: String, now: Date, requested: [String: Any]) -> [ProfileIssue] {
+    var issues=[ProfileIssue]()
+    func check(_ ok: Bool, _ issue: ProfileIssue) { if !ok { issues.append(issue) } }
+    let bindings:[(String,ProfileIssue,ProfileIssue,ProfileIssue)] = [
+        ("UUID",.uuid_outer_missing,.uuid_inner_missing,.uuid_mismatch),
+        ("CreationDate",.creation_outer_missing,.creation_inner_missing,.creation_mismatch),
+        ("ExpirationDate",.expiration_outer_missing,.expiration_inner_missing,.expiration_mismatch),
+        ("Platform",.platform_outer_missing,.platform_inner_missing,.platform_mismatch),
+        ("TeamIdentifier",.team_outer_missing,.team_inner_missing,.team_mismatch),
+        ("ApplicationIdentifierPrefix",.prefix_outer_missing,.prefix_inner_missing,.prefix_mismatch),
+        ("Entitlements",.entitlements_outer_missing,.entitlements_inner_missing,.entitlements_mismatch)
+    ]
+    for (key,outer,inner,mismatch) in bindings {
+        check(p[key] != nil,outer);check(der[key] != nil,inner)
+        if let a=p[key],let b=der[key] { check(NSDictionary(dictionary:[key:a]).isEqual(to:[key:b]),mismatch) }
+    }
+    check(p["ProvisionedDevices"] == nil,.outer_devices);check(der["ProvisionedDevices"] == nil,.inner_devices)
+    if let value=p["ProvisionedDevices"] { check(value as? [String] == [],.outer_devices_nonempty) }
+    if let value=der["ProvisionedDevices"] { check(value as? [String] == [],.inner_devices_nonempty) }
+    check(p["ProvisionsAllDevices"] == nil,.outer_all_devices);check(der["ProvisionsAllDevices"] == nil,.inner_all_devices)
+    if let value=p["ProvisionsAllDevices"] { check(bool(value) == false,.outer_all_devices_not_false) }
+    if let value=der["ProvisionsAllDevices"] { check(bool(value) == false,.inner_all_devices_not_false) }
+    let uuid=p["UUID"] as? String
+    check(uuid?.range(of:"^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$",options:.regularExpression) != nil,.uuid_format)
+    if let start=p["CreationDate"] as? Date,let end=p["ExpirationDate"] as? Date { check(start <= now && now < end && start < end,.validity) } else { issues.append(.validity) }
+    check(p["Platform"] as? [String] == ["iOS"],.platform);check(p["TeamIdentifier"] as? [String] == [team],.team)
+    check((p["Platform"] as? [String])?.contains("iOS") == true,.platform_missing_ios)
+    let prefixes=p["ApplicationIdentifierPrefix"] as? [String]
+    check(prefixes?.count == 1 && prefixes?.first?.range(of:"^[A-Z0-9]{10}$",options:.regularExpression) != nil,.prefix)
+    let certificates=p["DeveloperCertificates"] as? [Data],checksums=der["DeveloperCertificates"] as? [Data]
+    check(certificates?.count == 1,.outer_certificates);check(checksums?.count == 1,.inner_certificates)
+    check(certificates?.filter { $0 == leaf }.count == 1,.certificate_binding)
+    check(checksums?.filter { $0 == Data(SHA256.hash(data:leaf)) }.count == 1,.checksum_binding)
+    if let certificates,let checksums {
+        let hashes=certificates.map { Data(SHA256.hash(data:$0)) }
+        check(hashes.count == checksums.count && Set(hashes) == Set(checksums),.certificate_list_mismatch)
+        check(Set(certificates).count == certificates.count && Set(checksums).count == checksums.count,.certificate_list_duplicates)
+    }
+    let ent=p["Entitlements"] as? [String:Any],innerEnt=der["Entitlements"] as? [String:Any]
+    if let prefix=prefixes?.first { check(ent?["application-identifier"] as? String == prefix+".com.rooom.talk",.app_identifier) } else { issues.append(.app_identifier) }
+    check(ent?["com.apple.developer.team-identifier"] as? String == team,.team_entitlement)
+    check(bool(ent?["get-task-allow"]) == false,.outer_debug);check(bool(innerEnt?["get-task-allow"]) == false,.inner_debug)
+    check(bool(ent?["beta-reports-active"]) == true,.outer_beta);check(bool(innerEnt?["beta-reports-active"]) == true,.inner_beta)
+    check(ent?["aps-environment"] as? String == "production",.push_environment)
+    check(requested.count == 1 && requested["aps-environment"] as? String == "production",.requested)
+    return issues
+}
 func validateProfile(_ p: [String: Any], der: [String: Any], leaf: Data, team: String, now: Date, requested: [String: Any]) throws -> String {
     let mandatory = ["UUID", "CreationDate", "ExpirationDate", "Platform", "TeamIdentifier", "ApplicationIdentifierPrefix", "Entitlements"]
     for key in mandatory { guard let a = p[key], let b = der[key] else { throw GateError.profile }; try require(NSDictionary(dictionary: [key: a]).isEqual(to: [key: b]), .profile) }
@@ -318,8 +371,16 @@ func runGate(_ env: [String: String], root: URL, diagnosticOnly: Bool = false) t
     let der = try cmsStep(.inner, .der_parse) { try DER.decode(innerPayload).dictionary() }
     let entitlementData = try Data(contentsOf: root.appendingPathComponent("ios/App/App/App.entitlements"))
     guard let requested = try PropertyListSerialization.propertyList(from: entitlementData, format: nil) as? [String: Any] else { throw GateError.entitlement }
-    let uuid = try validateProfile(p, der: der, leaf: leaf, team: team, now: now, requested: requested)
-    if diagnosticOnly { try verifyProfilePolicyEvidence(inner) }
+    if diagnosticOnly { try verifyProfilePolicyEvidence(inner); print("TEST2 APPLE PROFILE PURPOSE PASS: production-only profile policy and chain flag verified.") }
+    let uuid: String
+    do { uuid = try validateProfile(p, der: der, leaf: leaf, team: team, now: now, requested: requested) }
+    catch {
+        if diagnosticOnly {
+            let issues=profileIssues(p,der:der,leaf:leaf,team:team,now:now,requested:requested)
+            throw ProfileFault(issues:issues.isEmpty ? [.unclassified]:issues)
+        }
+        throw error
+    }
     if diagnosticOnly { print("TEST2 DIAGNOSTIC PASS: validation only; no staging/signing/upload."); return }
     // Stage only after every check passes. No private-key PEM is ever written.
     let dir = URL(fileURLWithPath: temp).appendingPathComponent("rooom-test2-presign-" + UUID().uuidString)
@@ -348,6 +409,9 @@ func runGate(_ env: [String: String], root: URL, diagnosticOnly: Bool = false) t
             // Never print underlying CFErrors, subject names, passwords or paths.
             if let failure = error as? CMSFault {
                 FileHandle.standardError.write(Data("TEST2 PRESIGN STOP: cms_\(failure.layer.rawValue)_\(failure.stage.rawValue)\n".utf8)); exit(1)
+            }
+            if let failure=error as? ProfileFault {
+                FileHandle.standardError.write(Data("TEST2 PRESIGN STOP: profile_\(failure.issues.map { $0.rawValue }.joined(separator:"+"))\n".utf8));exit(1)
             }
             let code = (error as? GateError)?.rawValue ?? "input"
             FileHandle.standardError.write(Data("TEST2 PRESIGN STOP: \(code)\n".utf8)); exit(1)

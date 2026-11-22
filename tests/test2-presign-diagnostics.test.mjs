@@ -11,8 +11,15 @@ test('diagnostic exits before stage write and wrapper never reads env markers',(
  assert.match(swift,/if layer == \.outer \{ try check\(\.name_match/);
  assert.match(swift,/if layer == \.inner \{ try verifyProfilePurpose\(data, content: content as Data\)/);
  assert.match(swift,/if diagnosticOnly \{ try verifyProfilePolicyEvidence\(inner\)/);
+ assert(swift.indexOf('if diagnosticOnly { try verifyProfilePolicyEvidence(inner)')<swift.indexOf('do { uuid = try validateProfile'));
  assert.match(swift,/status == 0 && flags & \(UInt64\(1\) << 39\) != 0/);
  assert.match(swift,/kSecRevocationRequirePositiveResponse/);
+});
+test('profile diagnostics emit only reviewed enum codes, never injected values',()=>{
+ const issues=swift.match(/enum ProfileIssue[\s\S]*?\n}/)[0].match(/case (.*)/)[1].split(',').map(s=>s.trim());
+ for(const issue of issues){const m='TEST2 PRESIGN STOP: profile_'+issue;assert.equal(safeFailure(m+'\n'),m);}
+ assert.equal(safeFailure('TEST2 PRESIGN STOP: profile_uuid_inner_missing+platform_inner_missing\n'),'TEST2 PRESIGN STOP: profile_uuid_inner_missing+platform_inner_missing');
+ for(const value of ['profile_private_value','profile_uuid_inner_missing+private_value','profile_uuid_inner_missing\nSECRET'])assert.equal(safeFailure('TEST2 PRESIGN STOP: '+value),'TEST2 PRESIGN STOP: validation unavailable');
 });
 test('real workflow cannot reach distribution and secrets occur after exact source guard only',()=>{
  const job=workflow.slice(workflow.indexOf('  real-cms-diagnostic:'));

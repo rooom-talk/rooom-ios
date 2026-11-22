@@ -20,6 +20,8 @@ import Darwin
         let requested: [String: Any] = ["aps-environment":"production"]
         func profile(_ p: [String: Any], _ d: [String: Any], _ requested: [String: Any] = ["aps-environment":"production"]) throws { _ = try validateProfile(p, der:d, leaf:leaf, team:team, now:now, requested:requested) }
         try check { try profile(p,d,requested) } // Legacy prefix is deliberately not Team ID.
+        try check { try require(profileIssues(p,der:d,leaf:leaf,team:team,now:now,requested:requested).isEmpty,.profile) }
+        try check { var missing=d;missing.removeValue(forKey:"UUID");try require(profileIssues(p,der:missing,leaf:leaf,team:team,now:now,requested:requested) == [.uuid_inner_missing],.profile) }
         for key in ["UUID","CreationDate","ExpirationDate","Platform","TeamIdentifier","ApplicationIdentifierPrefix","Entitlements","DeveloperCertificates"] {
             try rejects { var bad=p; bad.removeValue(forKey:key); try profile(bad,d) }
             try rejects { var bad=d; bad.removeValue(forKey:key); try profile(p,bad) }
