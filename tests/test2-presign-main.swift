@@ -81,6 +81,12 @@ import Darwin
         try rejects { try evaluate(trust!,anchors:roots,codeSigning:true,now:now) }
         try rejects { try evaluate(trust!,anchors:[ca],codeSigning:false,now:now,revocation:true) }
         print("SYNTHETIC phase: CMS")
+        for libraryPath in ["/usr/lib/libCoreTrust.dylib", "/System/Library/PrivateFrameworks/CoreTrust.framework/CoreTrust", "/System/Library/PrivateFrameworks/CoreTrust.framework/Versions/A/CoreTrust"] {
+            if let handle=dlopen(libraryPath,RTLD_NOW | RTLD_LOCAL) {
+                print("SYNTHETIC CoreTrust probe: \(libraryPath) loaded; profile API \(dlsym(handle,\"CTEvaluateProvisioningProfile\") != nil)")
+                dlclose(handle)
+            } else { print("SYNTHETIC CoreTrust probe: \(libraryPath) unavailable") }
+        }
         let cms=try bytes("profile.cms"), expected=try bytes("payload.plist")
         try check { try require(verifiedCMS(cms,anchors:[ca],now:now,revocation:false)==expected,.cms) }
         try rejects { _ = try verifiedCMS(cms,anchors:[ca],now:now.addingTimeInterval(3*86400),revocation:false) }
@@ -92,7 +98,7 @@ import Darwin
                 catch let fault as CMSFault { try check { try require(fault.layer == layer && fault.stage == stage, .cms) } }
             }
             do { _ = try verifiedCMS(try bytes("wrong-name.cms"), anchors:[ca], now:now, revocation:false, layer:layer); fatalError("Expected name rejection") }
-            catch let fault as CMSFault { try check { try require(fault.layer == layer && fault.stage == (layer == .outer ? .name_match : .profile_policy_accept), .cms) } }
+            catch let fault as CMSFault { print("SYNTHETIC name/purpose rejection: \(fault.layer.rawValue) \(fault.stage.rawValue)"); try check { try require(fault.layer == layer && fault.stage == (layer == .outer ? .name_match : .profile_policy_accept), .cms) } }
             do { _ = try verifiedCMS(Data("not CMS".utf8), anchors:[ca], now:now, revocation:false, layer:layer); fatalError("Expected decode rejection") }
             catch let fault as CMSFault { try check { try require(fault.layer == layer && [.update,.finalize].contains(fault.stage), .cms) } }
         }
