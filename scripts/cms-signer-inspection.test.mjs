@@ -1,4 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import crypto from 'node:crypto';import cp from 'node:child_process';import os from 'node:os';import path from 'node:path';import {seal} from './cms-signer-inspection.mjs';
+test('committed inspection recipient is RSA3072 public key only',()=>{const text=fs.readFileSync('scripts/cms-evidence-recipient.pem','utf8');assert(!text.includes('PRIVATE'));const key=crypto.createPublicKey(text);assert.equal(key.asymmetricKeyType,'rsa');assert.equal(key.asymmetricKeyDetails.modulusLength,3072);});
 test('encrypted evidence roundtrip, tampering rejected, nothing decryptable from public key',()=>{
  const {publicKey,privateKey}=crypto.generateKeyPairSync('rsa',{modulusLength:3072});const plaintext=Buffer.from('private synthetic certificate evidence');const e=seal(plaintext,publicKey);
  assert(!JSON.stringify(e).includes(plaintext.toString()));const key=crypto.privateDecrypt({key:privateKey,oaepHash:'sha256'},Buffer.from(e.wrapped,'base64'));
@@ -16,3 +17,4 @@ test('native inspector compiles with shared unchanged checks and rejects absent 
  const r=cp.spawnSync(bin,[],{env:{PATH:process.env.PATH},encoding:'utf8'});assert.equal(r.status,1);assert.equal(r.stdout,'');assert.equal(r.stderr,'CMS INSPECTION STOP\n');
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
+
