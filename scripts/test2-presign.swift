@@ -190,6 +190,11 @@ func validateProfile(_ p: [String: Any], der: [String: Any], leaf: Data, team: S
     return uuid
 }
 
+func validatePrivateKey(_ key: SecKey, certificate: SecCertificate) throws {
+    guard let publicKey = SecKeyCopyPublicKey(key), let certPublic = SecCertificateCopyKey(certificate),
+          let a = SecKeyCopyExternalRepresentation(publicKey, nil), let b = SecKeyCopyExternalRepresentation(certPublic, nil), CFEqual(a, b) else { throw GateError.identity }
+}
+
 @available(macOS 15.0, *)
 func importIdentity(_ p12: Data, password: String) throws -> (SecCertificate, [SecCertificate]) {
     var items: CFArray?
@@ -200,9 +205,8 @@ func importIdentity(_ p12: Data, password: String) throws -> (SecCertificate, [S
     try require(CFGetTypeID(identity as CFTypeRef) == SecIdentityGetTypeID(), .identity)
     let id = identity as! SecIdentity; var certificate: SecCertificate?; var key: SecKey?
     try require(SecIdentityCopyCertificate(id, &certificate) == errSecSuccess && SecIdentityCopyPrivateKey(id, &key) == errSecSuccess, .identity)
-    guard let certificate, let key, let publicKey = SecKeyCopyPublicKey(key), let certPublic = SecCertificateCopyKey(certificate),
-          let a = SecKeyCopyExternalRepresentation(publicKey, nil), let b = SecKeyCopyExternalRepresentation(certPublic, nil), CFEqual(a, b),
-          let chain = list[0][kSecImportItemCertChain as String] as? [SecCertificate], !chain.isEmpty else { throw GateError.identity }
+    guard let certificate, let key, let chain = list[0][kSecImportItemCertChain as String] as? [SecCertificate], !chain.isEmpty else { throw GateError.identity }
+    try validatePrivateKey(key, certificate: certificate)
     try require(SecCertificateCopyData(chain[0]) as Data == SecCertificateCopyData(certificate) as Data, .identity)
     return (certificate, chain)
 }

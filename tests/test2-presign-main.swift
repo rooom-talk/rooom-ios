@@ -66,6 +66,8 @@ import Darwin
         print("SYNTHETIC phase: P12")
         let (cert,chain)=try importIdentity(try bytes("identity.p12"),password:"fixture-only-password")
         try check { try CertificateFacts.read(SecCertificateCopyData(cert) as Data).validate(team:team,now:now) }
+        guard let differentKey = SecKeyCreateRandomKey([kSecAttrKeyType as String:kSecAttrKeyTypeRSA,kSecAttrKeySizeInBits as String:2048,kSecPrivateKeyAttrs as String:[kSecAttrIsPermanent as String:false]] as CFDictionary,nil) else { throw GateError.identity }
+        try rejects { try validatePrivateKey(differentKey,certificate:cert) }
         try rejects { _ = try importIdentity(try bytes("identity.p12"),password:"wrong-fixture-password") }
         try rejects { _ = try importIdentity(try bytes("cert-only.p12"),password:"fixture-only-password") }
         try rejects { _ = try importIdentity(Data([0,1,2]),password:"fixture-only-password") }

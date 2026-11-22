@@ -7,7 +7,8 @@ const root=process.cwd();
 try{
  fs.writeFileSync(path.join(tmp,'leaf.cnf'),'[leaf]\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,codeSigning\n1.2.840.113635.100.6.1.4=critical,ASN1:NULL\n');
  fs.writeFileSync(path.join(tmp,'cms.cnf'),'[leaf]\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\n');
- run('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout','ca.key','-out','ca.pem','-subj','/CN=RoooM SYNTHETIC test CA','-days','2','-sha256','-addext','basicConstraints=critical,CA:TRUE','-addext','keyUsage=critical,keyCertSign,cRLSign']);
+ fs.writeFileSync(path.join(tmp,'ca.cnf'),'[req]\ndistinguished_name=dn\nx509_extensions=root\nprompt=no\n[dn]\nCN=RoooM SYNTHETIC test CA\n[root]\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid:always\n');
+ run('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout','ca.key','-out','ca.pem','-config','ca.cnf','-extensions','root','-days','2','-sha256']);
  for(const [name,subject,config]of [['identity','/CN=Apple Distribution: SYNTHETIC/OU=ABC123DE45','leaf.cnf'],['signer','/CN=Apple iPhone OS Provisioning Profile Signing','cms.cnf']]){
   run('openssl',['req','-new','-newkey','rsa:2048','-nodes','-keyout',name+'.key','-out',name+'.csr','-subj',subject]);
   run('openssl',['x509','-req','-in',name+'.csr','-CA','ca.pem','-CAkey','ca.key','-CAcreateserial','-out',name+'.pem','-days','1','-sha256','-extfile',config,'-extensions','leaf']);
