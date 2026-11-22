@@ -747,7 +747,9 @@ final class RooomMonetization {
             if web.isLoading { self?.beginDocument() }
         }
         pageLocation = web?.observe(\.url, options: [.new]) { [weak self] _, _ in self?.layout() }
-        observers.append(NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.hideAll() })
+        observers.append(NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.railShade.suspend(); self?.hideAll()
+        })
         observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }; self.railShade.resume(); self.layout()
             self.web?.evaluateJavaScript("window.dispatchEvent(new Event('rooom:rail-shade-sync'))", completionHandler: nil)
@@ -790,7 +792,7 @@ final class RooomMonetization {
     func setKeyboardVisible(_ value: Bool) { keyboard = value; if value { hideFeed() }; layout() }
     func hideFeed() { for e in entries.values where e.slot.format == .native { e.view.isHidden = true } }
     private func hideAll() {
-        if UIApplication.shared.applicationState == .active { railShade.clear() } else { railShade.suspend() }
+        railShade.view.isHidden = true
 #if ROOOM_TEST2_RAIL
         testRail?.release(); testRail = nil
 #endif

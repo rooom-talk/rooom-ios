@@ -1,0 +1,17 @@
+# Web owned iPad rail shade
+
+The generic Native overlay complements Web PR655 and implements the boundary identified by Web PR653. It starts from canonical `3f2b5db1c6eec53376062b96fbbdfc0c565fc02b` with PR24; historical PR23 is excluded. Branch: `codex/web-owned-rail-shade-20261122`.
+
+`RooomImobileBanner.swift` is the only product file changed. The existing trusted presentation bridge accepts `shadeSnapshot` and a document-bound monotonic `shade` instruction. An iPad-only capability advertises support. This visual sequence is independent of the existing presentation permission sequence. No existing permission command, SDK identifier, registration, show/refresh call, rail reservation or main-view constraint changes.
+
+Web sends enabled/RGBA/lease duration. Finite RGB0–255, alpha0–1, bounded duration250–5000ms and the existing compiled HTTPS host/main-frame/document protections are required. OFF is accepted while inactive. Clear/expiry preserve sequence; navigation changes document identity and resets the visual sequence. Stale ON cannot overwrite a received newer OFF.
+
+`RooomRailShade` draws a single UIView with background RGBA and alpha1 above the existing left reservation in active committed iPad landscape. The overlay includes the safe-area margins, follows the normal layout on resize and intercepts covered touches. It never contains an advertisement, privileged WebView or guide state. An overlay update performs only validation/drawing, without invoking advertising layout, permission or SDK operations. Portrait/iPhone have no visible left overlay.
+
+Web owns all guide steps, state, start/stop decisions and opacity/color. V5 reads the CSS variable used by its own spotlight and sends it through the generic bridge. The initial value is `rgba(5,8,12,.73)`. Future Web timing/color/ON-OFF changes do not require another Native rebuild once this capability is distributed.
+
+The renewable five-second visual lease is a fallback for lost clear messages or a missing JS owner. Expiry hides the layer without ad lifecycle calls. Background suspension hides but retains the last Web pixels, foreground restores them with existing layout and immediately requests fresh Web state. Normal Web visibility return/BFCache return resynchronizes. Full document reset/disposal removes the view. There is no Native onboarding storage, step, completion flag or guide timer.
+
+Verification uses the existing no-signing SDK/TEST2 workflows, source/policy tests, existing real Swift SDK lifecycle harness (drawing dependency explicitly isolated) and `tests/rail-shade-uikit-probe.mjs`. The new probe extracts actual Swift drawing/engine/handler methods into a local offline UIKit/WK app, verifies color/frame/z-order/touch, retained WK/DOM identity/load count, ordering/invalid data/document reset and real lease/suspend/resume. Its report explicitly distinguishes any fixture boundaries from actual app/SDK/physical rotation acceptance. `--extract-only` on Windows is not execution on iOS.
+
+No signing, exported IPA, TestFlight upload, Store release, Firebase deployment or production publication is included. A physical test requires a newly signed build containing this capability after separate TN approval. Source integration and unsigned build success cannot update installed TestFlight1.6.2(100079) by themselves. Build number advancement/signing/upload remain a separate authorized operation.

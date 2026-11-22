@@ -139,6 +139,7 @@ function swiftProgram(useBaseline=false){
  return foundation+doubles+slotClass+block(owner,'struct WebPresentationPermission')+String.raw`
 // Drawing is isolated here; real overlay pixels/lifetime have their own UIKit probe.
 private final class RailShadeBoundary {
+    let view = UIView()
     func reset() {} ; func clear() {} ; func suspend() {}
 }
 private final class RooomMonetization {
