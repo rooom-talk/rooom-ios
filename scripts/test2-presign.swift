@@ -144,7 +144,7 @@ func evaluate(_ trust: SecTrust, anchors: [SecCertificate], codeSigning: Bool, n
     try require(SecTrustSetVerifyDate(trust, now as CFDate) == errSecSuccess && SecTrustSetNetworkFetchAllowed(trust, revocation) == errSecSuccess, .trust)
     var error: CFError?; let accepted = SecTrustEvaluateWithError(trust, &error)
 #if ROOOM_PRESIGN_TESTS
-    if !accepted { print("SYNTHETIC trust result: \(error.map { CFErrorGetCode($0) } ?? 0)") }
+    if !accepted { FileHandle.standardError.write(Data("SYNTHETIC trust result: \(error.map { CFErrorGetCode($0) } ?? 0)\n".utf8)) }
 #endif
     try require(accepted, .trust)
 }

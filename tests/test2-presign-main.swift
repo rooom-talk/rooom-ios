@@ -1,9 +1,11 @@
 import Foundation
 import Security
 import CryptoKit
+import Darwin
 
 @main struct PresignTests {
     static func main() throws {
+        setbuf(stdout, nil)
         var count = 0
         func check(_ operation: () throws -> Void) throws { try operation(); count += 1 }
         func rejects(_ operation: () throws -> Void) throws {
