@@ -255,6 +255,55 @@ import UIKit
 import WebKit
 import Capacitor
 
+// Generic, transient Web-owned RGBA drawing only. No advertising/guide state.
+final class RooomRailShade {
+    private(set) var sequence = 0
+    private(set) var rgba: [Double]?
+    let view = UIView()
+    private var lease: Timer?
+    init() {
+        view.isOpaque = false; view.isHidden = true
+        view.isAccessibilityElement = false; view.accessibilityElementsHidden = true
+        // An active visual cover also prevents taps reaching the covered rail.
+        view.isUserInteractionEnabled = true
+    }
+    func set(sequence next: Int, rgba color: [Double]?, leaseMilliseconds: Double) throws {
+        guard next > sequence, next < 1_000_000_000,
+              leaseMilliseconds.isFinite, (250...5000).contains(leaseMilliseconds) else { throw RooomAdError.invalidRequest }
+        if let color {
+            guard color.count == 4, color.allSatisfy({ $0.isFinite }),
+                  color.prefix(3).allSatisfy({ (0...255).contains($0) }),
+                  (0...1).contains(color[3]) else { throw RooomAdError.invalidRequest }
+        }
+        sequence = next; rgba = color; lease?.invalidate(); lease = nil
+        if let color {
+            view.backgroundColor = UIColor(red: CGFloat(color[0]/255), green: CGFloat(color[1]/255), blue: CGFloat(color[2]/255), alpha: CGFloat(color[3]))
+            renew(milliseconds: leaseMilliseconds)
+        } else { view.isHidden = true }
+    }
+    func place(in shell: UIView, frame: CGRect?) {
+        guard rgba != nil, let frame, frame.width > 0, frame.height > 0 else { view.isHidden = true; return }
+        UIView.performWithoutAnimation {
+            if view.superview !== shell { shell.addSubview(view) }
+            view.frame = frame; view.isHidden = false; shell.bringSubviewToFront(view)
+        }
+    }
+    func clear() { lease?.invalidate(); lease = nil; rgba = nil; view.isHidden = true }
+    private func renew(milliseconds: Double) {
+        lease?.invalidate(); let current = sequence
+        let timer = Timer(timeInterval: milliseconds/1000, repeats: false) { [weak self] _ in
+            guard let self, self.sequence == current else { return }; self.clear()
+        }
+        lease = timer; RunLoop.main.add(timer, forMode: .common)
+    }
+    // Preserve last Web pixels while suspended, then request fresh Web state.
+    // This is generic visual lifecycle, never guide progress or ad permission.
+    func suspend() { lease?.invalidate(); lease = nil; view.isHidden = true }
+    func resume() { if rgba != nil { renew(milliseconds: 5000) } }
+    func reset() { clear(); sequence = 0; view.removeFromSuperview() }
+    deinit { lease?.invalidate() }
+}
+
 // The publisher's Web 728x90 tag has no APP SDK spot. Keep its scripts outside
 // the authenticated Capacitor WebView: no handlers, injected app scripts, app
 // cookies, main-page DOM or permission bridge exist on this dedicated surface.
@@ -633,6 +682,19 @@ final class RooomMonetization {
     }
     // End pure document permission.
     private(set) var presentation = WebPresentationPermission()
+    let railShade = RooomRailShade()
+    func setRailShade(document: String, sequence: Int, rgba: [Double]?, leaseMilliseconds: Double) throws {
+        guard document == presentation.documentId else { throw RooomAdError.invalidRequest }
+        try railShade.set(sequence: sequence, rgba: rgba, leaseMilliseconds: leaseMilliseconds)
+        updateRailShadeFrame()
+    }
+    private func updateRailShadeFrame() {
+        guard let shell else { railShade.clear(); return }
+        let eligible = device == "tablet" && shell.bounds.width > shell.bounds.height &&
+            reservation.left > 0 && presentation.allowed && presentation.committed &&
+            UIApplication.shared.applicationState == .active
+        railShade.place(in: shell, frame: eligible ? CGRect(x: 0, y: 0, width: reservation.left, height: shell.bounds.height) : nil)
+    }
     private var presentationLease: Timer?
     func setPresentation(document: String, sequence: Int, allowed: Bool, cover: UIColor?) throws {
         guard presentation.set(document: document, sequence: sequence, allowed: allowed) else { throw RooomAdError.invalidRequest }
@@ -686,7 +748,10 @@ final class RooomMonetization {
         }
         pageLocation = web?.observe(\.url, options: [.new]) { [weak self] _, _ in self?.layout() }
         observers.append(NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.hideAll() })
-        observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.layout() })
+        observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }; self.railShade.resume(); self.layout()
+            self.web?.evaluateJavaScript("window.dispatchEvent(new Event('rooom:rail-shade-sync'))", completionHandler: nil)
+        })
     }
     deinit { for observer in observers { NotificationCenter.default.removeObserver(observer) }; clear() }
     func configure(_ next: RooomAdConfig) throws {
@@ -709,10 +774,12 @@ final class RooomMonetization {
         let old = entries; entries.removeAll(); for entry in old.values { entry.release() }
     }
     private func beginDocument() {
+        railShade.reset()
         presentationLease?.invalidate(); presentationLease = nil; presentation.reset(); controller?.setPresentationCover(nil)
         releaseCreatives(); config = .off; layout()
     }
     func clear() {
+        railShade.reset()
         presentationLease?.invalidate(); presentationLease = nil; presentation.reset(); controller?.setPresentationCover(nil)
         releaseCreatives()
         config = .off; setReservation(RooomAdInsets())
@@ -723,6 +790,7 @@ final class RooomMonetization {
     func setKeyboardVisible(_ value: Bool) { keyboard = value; if value { hideFeed() }; layout() }
     func hideFeed() { for e in entries.values where e.slot.format == .native { e.view.isHidden = true } }
     private func hideAll() {
+        if UIApplication.shared.applicationState == .active { railShade.clear() } else { railShade.suspend() }
 #if ROOOM_TEST2_RAIL
         testRail?.release(); testRail = nil
 #endif
@@ -794,7 +862,7 @@ final class RooomMonetization {
 
     func layout() {
         guard !layingOut, let shell, let web else { return }
-        layingOut = true; defer { layingOut = false }
+        layingOut = true; defer { layingOut = false; updateRailShadeFrame() }
         guard presentation.allowed else { hideAll(); setReservation(RooomAdInsets()); return }
         // The configured launch URL is available before WKWebView has its first
         // URL. After navigation starts, always use the real page URL.
@@ -964,11 +1032,26 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
               [0,443].contains(origin.port), bridge?.webView?.url?.scheme == "https",
               bridge?.webView?.url?.host == expectedHost, body["version"] as? Int == 1,
               let engine = monetization, let command = body["command"] as? String else { reply(nil,"Untrusted presentation"); return }
+        if command == "shadeSnapshot" {
+            reply(["version":1,"documentId":engine.presentation.documentId,"sequence":engine.railShade.sequence],nil); return
+        }
         if command == "snapshot" {
             reply(["version":1,"documentId":engine.presentation.documentId,"sequence":engine.presentation.sequence],nil); return
         }
         guard let document = body["documentId"] as? String, let sequence = body["sequence"] as? Int else { reply(nil,"Invalid presentation"); return }
         do {
+            if command == "shade" {
+                guard let enabled = body["enabled"] as? Bool,
+                      let duration = body["leaseMilliseconds"] as? Double,
+                      !enabled || UIApplication.shared.applicationState == .active else { throw RooomAdError.invalidRequest }
+                var rgba: [Double]? = nil
+                if enabled {
+                    guard let values = body["rgba"] as? [Double] else { throw RooomAdError.invalidRequest }
+                    rgba = values
+                }
+                try engine.setRailShade(document: document, sequence: sequence, rgba: rgba, leaseMilliseconds: duration)
+                reply(["version":1,"ok":true,"documentId":document,"sequence":sequence],nil); return
+            }
             if command == "commit" {
                 guard UIApplication.shared.applicationState == .active else { throw RooomAdError.invalidRequest }
                 try engine.commitPresentation(document: document, sequence: sequence)
@@ -1044,7 +1127,8 @@ final class RooomAdsBridgeViewController: CAPBridgeViewController {
         applyCanvasBackground(canvasBackground)
         monetization = RooomMonetization(controller: self)
         // Capability only. Web owns state, timing, configuration and protocol calls.
-        let presentationCapability = "window.__rooomNativeAdPresentationVersion=1;"
+        let presentationCapability = "window.__rooomNativeAdPresentationVersion=1;" +
+            (UIDevice.current.userInterfaceIdiom == .pad ? "window.__rooomNativeRailShadeVersion=1;" : "")
         web.configuration.userContentController.addUserScript(WKUserScript(source: presentationCapability,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
         web.evaluateJavaScript(presentationCapability, completionHandler: nil)

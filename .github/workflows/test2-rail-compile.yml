@@ -48,10 +48,16 @@ jobs:
         env:
           ROOOM_PRESENTATION_PROBE_REPORT: ${{ runner.temp }}/presentation-probe-report.json
         run: node tests/web-presentation-uikit-probe.mjs
+      - name: Web-owned RGBA rail overlay in real UIKit and WK (offline unsigned)
+        env:
+          ROOOM_RAIL_SHADE_PROBE_REPORT: ${{ runner.temp }}/rail-shade-probe-report.json
+        run: node tests/rail-shade-uikit-probe.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: unsigned-offline-presentation-probe
-          path: ${{ runner.temp }}/presentation-probe-report.json
+          path: |
+            ${{ runner.temp }}/presentation-probe-report.json
+            ${{ runner.temp }}/rail-shade-probe-report.json
           if-no-files-found: error
       - name: Actual Swift coordinator race tests with isolated transport doubles
         run: node tests/test2-rail-races.mjs
