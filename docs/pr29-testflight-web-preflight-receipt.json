@@ -1,0 +1,74 @@
+{
+  "ok": true,
+  "checkedAt": "2026-11-22T03:25:48.287Z",
+  "project": "rooom-test2",
+  "webPin": "8a783c61465330373eae8451053ea811df823e35",
+  "canonicalHead": "8a783c61465330373eae8451053ea811df823e35",
+  "reviewedReceiptSha256": "b20bbd2f1e76251549bd80f85fd4a7d69385f1d36b686ce22f848bf34ac73f83",
+  "entrySha256": "3f022eb8cfe82b221e87da686b73ae6f5555f7949a17833b5f478c38bd3c200a",
+  "pinnedRepositoryLoaders": 20,
+  "selectedAssets": 8,
+  "rows": [
+    {
+      "file": "home.css",
+      "rawHash": "e163c54200e4f9e713eb496ec2cdd35670a739d650d10e4c6f23bbad8637f08a",
+      "gzipHash": "34f6ac22633bba9207fc12838cce4670db8c29d0915587e1a546ed6bc4c93c90",
+      "size": 719750
+    },
+    {
+      "file": "src/features/onboarding/first-top-tour-v5.js",
+      "rawHash": "5691796bc279c39f8e96db291b8488e9fa8c8512a4cd0474911427942341cc2c",
+      "gzipHash": "e6ffa95547e2f76d08c6218ae87073f7159da9730f46d59b02710d2e4685536b",
+      "size": 28202
+    },
+    {
+      "file": "src/features/ads/native-rail-shade.mjs",
+      "rawHash": "040d8ba2b37e68c94cd3f6bb4a01d1cd6f5b95715481b878d0ab971cdc5cb82f",
+      "gzipHash": "29e377e1829bb1028f1884d4e21c649aebe33519eaeaad9a8635ecd807cba604",
+      "size": 2532
+    },
+    {
+      "file": "src/features/ads/landscape-ad-preview.mjs",
+      "rawHash": "8ddcc0d9ab9e61ef69f50aa9a9f5bf273ab28cfccf227ac068d6f3dd219b97cc",
+      "gzipHash": "acee265e27feb9bc446275ce50edecc8702a25cf3bd32ce10d57030392603a53",
+      "size": 8798
+    },
+    {
+      "file": "src/features/ads/test2-rail-policy.mjs",
+      "rawHash": "76d527a2d76e39583b76057dd55bd03fad03e491ea0e3c0168fde4fc622f519e",
+      "gzipHash": "1f63169269d8b1b5e4682344a695a0feb24f4dac479cfcc66a9001cd8903bd28",
+      "size": 1286
+    },
+    {
+      "file": "src/features/ads/test2-rail-surface.mjs",
+      "rawHash": "adbcbce1e7eb645076b048d7034869446455a05b2911f1990c62b5bfbdb91e6e",
+      "gzipHash": "da31d4f180da807d60737add06f91cbae8cebdd3dcb5d1600ccfcc9b43a8d7b5",
+      "size": 2497
+    },
+    {
+      "file": "src/features/ads/test2-rail.html",
+      "rawHash": "a31db44a8bb1e9cee0b5e019a05b31148360af16a92b0d6620e8d9f1263e759b",
+      "gzipHash": "5f4a40ee3b756e9d09aed4061b46c95a505681a8b2459e102318c738ade964cd",
+      "size": 557
+    },
+    {
+      "file": "src/features/ads/test2-rail.css",
+      "rawHash": "3e68981c9fb9582422ab963f970be54ae67c65fa70004290840c0b4d4af2cd3e",
+      "gzipHash": "cbdae7da0f6c8ef0e5ead6f2fdb33c66d47eeb1611226a4c376b5789e389a84f",
+      "size": 498
+    }
+  ],
+  "manifestGeneration": "1795317051666143",
+  "manifestHash": "934ac5e4eff33956e1bb654bbe28074f2004add8481828aaab06d00cc2414bed",
+  "entries": 2220,
+  "gateVersion": "projects/rooom-test2/sites/rooom-test2/versions/765ae86fbf6cc59f",
+  "gateConfigHash": "7b5243b8cdfb847ff739b336b117e61db2095d6964390aa642636abfbee430e8",
+  "readRequests": 22,
+  "cloudWrites": 0,
+  "dbWrites": 0,
+  "workflowDispatches": 0,
+  "signingOperations": 0,
+  "uploads": 0,
+  "nativeDistributionAuthorized": false,
+  "scope": "Three shade assets match exact reviewed receipt raw hashes; V5/module also match canonical content. Five rail assets match canonical LF or CRLF bytes only, with canonical content equality. Full entrance protection and current manifest stable across readback. Not an Apple eligibility check, Native build, device acceptance, or authorization to sign/upload. No claim that unrelated inventory equals an earlier pre-publication baseline."
+}
