@@ -2,6 +2,7 @@
 import Foundation
 import Security
 import CryptoKit
+import Darwin
 
 enum GateError: String, Error { case input, der, certificate, identity, trust, cms, profile, entitlement, context, staging }
 func require(_ condition: Bool, _ error: GateError) throws { if !condition { throw error } }
@@ -157,11 +158,41 @@ func evaluate(_ trust: SecTrust, anchors: [SecCertificate], codeSigning: Bool, n
 }
 enum CMSLayer: String { case outer, inner }
 enum CMSStage: String, CaseIterable {
-    case bounds, create, decoder, update, finalize, count_api, count_one, signature_api, signature_valid, trust_present, trust_policy_create, trust_policy, trust_anchors, trust_anchor_only, trust_date, trust_network, trust_evaluate, cert_api, cert_present, cert_parse, name_match, digital_signature, non_ca, not_submission, content_api, content_present, content_nonempty, plist_parse, inner_present, der_parse
+    case bounds, create, decoder, update, finalize, count_api, count_one, signature_api, signature_valid, trust_present, trust_policy_create, trust_policy, trust_anchors, trust_anchor_only, trust_date, trust_network, trust_evaluate, cert_api, cert_present, cert_binding, cert_parse, name_match, digital_signature, non_ca, not_submission, content_api, content_present, content_nonempty, profile_policy_load, profile_policy_symbol, profile_policy_accept, profile_policy_content, plist_parse, inner_present, der_parse
 }
 struct CMSFault: Error { let layer: CMSLayer; let stage: CMSStage }
 func cmsStep<T>(_ layer: CMSLayer, _ stage: CMSStage, _ body: () throws -> T) throws -> T {
     do { return try body() } catch { throw CMSFault(layer: layer, stage: stage) }
+}
+
+// Apple XNU EXTERNAL_HEADERS/CoreTrust/{CTEvaluate,CTConfig}.h:
+// int (const uint8_t *, size_t, bool, const uint8_t **, size_t *).
+// Purpose authorization is separate from CMS signature, expiry and revocation.
+typealias ProfilePolicyEvaluator = @convention(c) (UnsafePointer<UInt8>?, UInt, Bool, UnsafeMutablePointer<UnsafePointer<UInt8>?>?, UnsafeMutablePointer<UInt>?) -> Int32
+func checkProfilePolicy(_ data: Data, content: Data, evaluator: ProfilePolicyEvaluator) throws {
+    try cmsStep(.inner, .profile_policy_content) { try require(!data.isEmpty && data.count <= 4_194_304 && !content.isEmpty, .cms) }
+    try data.withUnsafeBytes { raw in
+        let start = raw.baseAddress!.assumingMemoryBound(to: UInt8.self)
+        var result: UnsafePointer<UInt8>?; var size: UInt = 0
+        // Never allow Apple's test roots. Unsupported APIs or policies stop.
+        let status = evaluator(start, UInt(raw.count), false, &result, &size)
+        try cmsStep(.inner, .profile_policy_accept) { try require(status == 0, .cms) }
+        try cmsStep(.inner, .profile_policy_content) {
+            guard let result else { throw GateError.cms }
+            let base = UInt(bitPattern: start), address = UInt(bitPattern: result)
+            // Check the returned borrowed pointer before reading it; no overflow.
+            try require(address >= base && address - base <= UInt(raw.count), .cms)
+            try require(size > 0 && size <= UInt(raw.count) - (address - base) && size == UInt(content.count), .cms)
+            try require(Data(bytes: result, count: Int(size)) == content, .cms)
+        }
+    }
+}
+func verifyProfilePurpose(_ data: Data, content: Data) throws {
+    let library = dlopen("/usr/lib/libCoreTrust.dylib", RTLD_NOW | RTLD_LOCAL)
+    guard let library else { throw CMSFault(layer: .inner, stage: .profile_policy_load) }
+    defer { dlclose(library) }
+    guard let symbol = dlsym(library, "CTEvaluateProvisioningProfile") else { throw CMSFault(layer: .inner, stage: .profile_policy_symbol) }
+    try checkProfilePolicy(data, content: content, evaluator: unsafeBitCast(symbol, to: ProfilePolicyEvaluator.self))
 }
 func verifiedCMS(_ data: Data, anchors: [SecCertificate], now: Date, revocation: Bool = true, layer: CMSLayer = .outer) throws -> Data {
     func check(_ stage: CMSStage, _ condition: @autoclosure () -> Bool) throws {
@@ -182,14 +213,20 @@ func verifiedCMS(_ data: Data, anchors: [SecCertificate], now: Date, revocation:
     try evaluate(signerTrust, anchors: anchors, codeSigning: false, now: now, revocation: revocation, cmsLayer: layer)
     var signer: SecCertificate?; try check(.cert_api, CMSDecoderCopySignerCert(decoder, 0, &signer) == errSecSuccess)
     guard let signer else { throw CMSFault(layer: layer, stage: .cert_present) }
+    try cmsStep(layer, .cert_binding) {
+        guard let chain = SecTrustCopyCertificateChain(signerTrust) as? [SecCertificate], let first = chain.first else { throw GateError.cms }
+        try require(SecCertificateCopyData(first) as Data == SecCertificateCopyData(signer) as Data, .cms)
+    }
     let facts = try cmsStep(layer, .cert_parse) { try CertificateFacts.read(SecCertificateCopyData(signer) as Data) }
-    try check(.name_match, facts.commonName == "Apple iPhone OS Provisioning Profile Signing")
+    if layer == .outer { try check(.name_match, facts.commonName == "Apple iPhone OS Provisioning Profile Signing") }
     try check(.digital_signature, facts.digitalSignature)
     try check(.non_ca, !facts.ca)
     try check(.not_submission, !facts.iosSubmission)
     var content: CFData?; try check(.content_api, CMSDecoderCopyContent(decoder, &content) == errSecSuccess)
     guard let content else { throw CMSFault(layer: layer, stage: .content_present) }
-    try check(.content_nonempty, CFDataGetLength(content) > 0); return content as Data
+    try check(.content_nonempty, CFDataGetLength(content) > 0)
+    if layer == .inner { try verifyProfilePurpose(data, content: content as Data) }
+    return content as Data
 }
 
 func validateProfile(_ p: [String: Any], der: [String: Any], leaf: Data, team: String, now: Date, requested: [String: Any]) throws -> String {

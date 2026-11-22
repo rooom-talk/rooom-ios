@@ -5,6 +5,7 @@ on:
       - '.github/workflows/main.yml'
       - '.github/workflows/test2-presign-check.yml'
       - 'scripts/test2-presign*'
+      - 'scripts/test2-diagnostic*'
       - 'scripts/cms-*'
       - 'scripts/presign-apple-roots/**'
       - 'tests/test2-presign*'
@@ -15,6 +16,11 @@ on:
       approved_sha:
         description: Exact source to test; never signs/uploads the app
         required: true
+        type: string
+      candidate_pull_request:
+        description: Open same-repository candidate PR; omit for canonical validation
+        required: false
+        default: ''
         type: string
       confirmation:
         description: Validation only, never app signing or upload
@@ -48,7 +54,11 @@ jobs:
         run: ./tests/testflight-command.test.ps1
 
   real-cms-diagnostic:
-    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'DIAGNOSE_REAL_CMS_ONLY' && github.ref == 'refs/heads/release/ios-review-candidate-20261011'
+    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'DIAGNOSE_REAL_CMS_ONLY' && (github.ref == 'refs/heads/release/ios-review-candidate-20261011' || github.ref == 'refs/heads/codex/test2-apple-cms-policy-20261122')
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
     runs-on: macos-15
     timeout-minutes: 8
     steps:
@@ -59,12 +69,13 @@ jobs:
       - name: Verify exact diagnostic source before secret access
         env:
           APPROVED_SHA: ${{ inputs.approved_sha }}
+          CANDIDATE_PULL_REQUEST: ${{ inputs.candidate_pull_request }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
-          test "$(gh api repos/rooom-talk/rooom-ios/branches/release/ios-review-candidate-20261011 --jq .commit.sha)" = "$APPROVED_SHA"
+          node scripts/test2-diagnostic-source.mjs
       - uses: actions/setup-node@v4
         with:
           node-version: 22

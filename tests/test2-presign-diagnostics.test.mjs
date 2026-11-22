@@ -8,7 +8,8 @@ test('all CMS layers/stages cross strict log boundary, injected data is rejected
 test('diagnostic exits before stage write and wrapper never reads env markers',()=>{
  assert(swift.indexOf('if diagnosticOnly { print')<swift.indexOf('// Stage only after every check passes.'));
  assert.match(swift,/diagnosticOnly: diagnosticOnly/);assert.match(swift,/layer: \.outer/);assert.match(swift,/layer: \.inner/);
- assert.match(swift,/facts.commonName == "Apple iPhone OS Provisioning Profile Signing"/);
+ assert.match(swift,/if layer == \.outer \{ try check\(\.name_match/);
+ assert.match(swift,/if layer == \.inner \{ try verifyProfilePurpose\(data, content: content as Data\)/);
  assert.match(swift,/kSecRevocationRequirePositiveResponse/);
 });
 test('real workflow cannot reach distribution and secrets occur after exact source guard only',()=>{
