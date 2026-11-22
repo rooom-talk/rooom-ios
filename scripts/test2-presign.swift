@@ -142,7 +142,11 @@ func evaluate(_ trust: SecTrust, anchors: [SecCertificate], codeSigning: Bool, n
     try require(SecTrustSetPolicies(trust, policies as CFArray) == errSecSuccess, .trust)
     try require(SecTrustSetAnchorCertificates(trust, anchors as CFArray) == errSecSuccess && SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess, .trust)
     try require(SecTrustSetVerifyDate(trust, now as CFDate) == errSecSuccess && SecTrustSetNetworkFetchAllowed(trust, revocation) == errSecSuccess, .trust)
-    var error: CFError?; try require(SecTrustEvaluateWithError(trust, &error), .trust)
+    var error: CFError?; let accepted = SecTrustEvaluateWithError(trust, &error)
+#if ROOOM_PRESIGN_TESTS
+    if !accepted { print("SYNTHETIC trust result: \(error.map { CFErrorGetCode($0) } ?? 0)") }
+#endif
+    try require(accepted, .trust)
 }
 func verifiedCMS(_ data: Data, anchors: [SecCertificate], now: Date, revocation: Bool = true) throws -> Data {
     try require(!data.isEmpty && data.count <= 4_194_304, .cms)
@@ -206,6 +210,7 @@ func importIdentity(_ p12: Data, password: String) throws -> (SecCertificate, [S
 @available(macOS 15.0, *)
 func runGate(_ env: [String: String], root: URL) throws {
     try require(env["TARGET_ENV"] == "test2" && env["ROOOM_TESTFLIGHT_BUILD_NUMBER"].flatMap(Int.init).map { $0 > 100079 } == true && env["ROOOM_MARKETING_VERSION"] == "1.6.2", .context)
+    try require(env["ROOOM_INTERNAL_ONLY"] == "<key>testFlightInternalTestingOnly</key><true/>" && env["ROOOM_BUILD_CONDITIONS"] == "$(inherited) ROOOM_IMOBILE_ADS ROOOM_TEST2_RAIL", .context)
     guard let team = env["APPLE_TEAM_ID"], team.range(of: "^[A-Z0-9]{10}$", options: .regularExpression) != nil,
           let password = env["CERTIFICATE_PASSWORD"], !password.isEmpty,
           let encoded = env["CERTIFICATE_BASE64"],

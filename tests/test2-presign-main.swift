@@ -66,7 +66,8 @@ import CryptoKit
         try rejects { _ = try importIdentity(try bytes("identity.p12"),password:"wrong-fixture-password") }
         try rejects { _ = try importIdentity(try bytes("cert-only.p12"),password:"fixture-only-password") }
         try rejects { _ = try importIdentity(Data([0,1,2]),password:"fixture-only-password") }
-        var trust:SecTrust?;try require(SecTrustCreateWithCertificates(chain as CFArray,SecPolicyCreateBasicX509(),&trust)==errSecSuccess,.trust)
+        let basicLeaf=SecCertificateCreateWithData(nil,try bytes("signer.der") as CFData)!
+        var trust:SecTrust?;try require(SecTrustCreateWithCertificates([basicLeaf,ca] as CFArray,SecPolicyCreateBasicX509(),&trust)==errSecSuccess,.trust)
         try check { try evaluate(trust!,anchors:[ca],codeSigning:false,now:now,revocation:false) }
         let roots=try loadAppleRoots(URL(fileURLWithPath:FileManager.default.currentDirectoryPath).appendingPathComponent("scripts/presign-apple-roots"))
         try rejects { try evaluate(trust!,anchors:roots,codeSigning:true,now:now) }
@@ -75,7 +76,7 @@ import CryptoKit
         try check { try require(verifiedCMS(cms,anchors:[ca],now:now,revocation:false)==expected,.cms) }
         try rejects { _ = try verifiedCMS(cms,anchors:roots,now:now) }
         try rejects { _ = try verifiedCMS(try bytes("wrong-signer.cms"),anchors:[ca],now:now,revocation:false) }
-        try rejects { var bad=cms;bad[bad.count/2] ^= 1;_ = try verifiedCMS(bad,anchors:[ca],now:now,revocation:false) }
+        try rejects { var bad=cms;guard let range=bad.range(of:Data("Synthetic".utf8)) else { throw GateError.cms };bad[range.lowerBound] ^= 1;_ = try verifiedCMS(bad,anchors:[ca],now:now,revocation:false) }
         try rejects { _ = try verifiedCMS(Data("not CMS".utf8),anchors:[ca],now:now,revocation:false) }
         try rejects { _ = try runGate(["TARGET_ENV":"production"],root:folder) }
         print("TEST2 PRESIGN SWIFT TESTS PASS: \(count) checks; synthetic identities/CMS only; no app signing or upload.")

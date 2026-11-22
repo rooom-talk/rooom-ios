@@ -4,14 +4,15 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 export function verifyStage(env=process.env){
  const stop=()=>{throw Error('TEST2 PRESIGN STOP: staged identity binding');};
  if(env.TARGET_ENV!=='test2'||env.ROOOM_TEST2_PRESIGN_OK!=='1'||env.ROOOM_MARKETING_VERSION!=='1.6.2'||!/^\d+$/.test(env.ROOOM_TESTFLIGHT_BUILD_NUMBER||'')||Number(env.ROOOM_TESTFLIGHT_BUILD_NUMBER)<=100079)stop();
- if(!/^[A-F0-9]{40}$/.test(env.ROOOM_TEST2_IDENTITY_SHA1||'')||!/^[a-f0-9-]{36}$/i.test(env.ROOOM_TEST2_PROFILE_UUID||'')||!/^\d+$/.test(env.ROOOM_TEST2_SIGNING_EXPIRES||'')||Number(env.ROOOM_TEST2_SIGNING_EXPIRES)*1000<=Date.now())stop();
+ if(env.ROOOM_INTERNAL_ONLY!=='<key>testFlightInternalTestingOnly</key><true/>'||env.ROOOM_BUILD_CONDITIONS!=='$(inherited) ROOOM_IMOBILE_ADS ROOOM_TEST2_RAIL'||!Number.isSafeInteger(Number(env.ROOOM_TESTFLIGHT_BUILD_NUMBER)))stop();
+ if(!/^[A-F0-9]{40}$/.test(env.ROOOM_TEST2_IDENTITY_SHA1||'')||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(env.ROOOM_TEST2_PROFILE_UUID||'')||!/^\d+$/.test(env.ROOOM_TEST2_SIGNING_EXPIRES||'')||!Number.isSafeInteger(Number(env.ROOOM_TEST2_SIGNING_EXPIRES))||Number(env.ROOOM_TEST2_SIGNING_EXPIRES)*1000<=Date.now())stop();
  if(!env.RUNNER_TEMP||!env.ROOOM_TEST2_SIGNING_DIR)stop();
  const parent=fs.realpathSync(env.RUNNER_TEMP),dir=fs.realpathSync(env.ROOOM_TEST2_SIGNING_DIR),ds=fs.lstatSync(dir);
  if(!ds.isDirectory()||(ds.mode&0o077)!==0||(process.getuid&&ds.uid!==process.getuid()))stop();
  if(path.dirname(dir)!==parent||!/^rooom-test2-presign-[A-F0-9-]{36}$/i.test(path.basename(dir))||fs.lstatSync(env.ROOOM_TEST2_SIGNING_DIR).isSymbolicLink())stop();
  for(const [name,key]of [['identity.p12','ROOOM_TEST2_P12_SHA256'],['profile.mobileprovision','ROOOM_TEST2_PROFILE_SHA256']]){
   const file=path.join(dir,name),st=fs.lstatSync(file);
-  if((process.getuid&&st.uid!==process.getuid())||st.isSymbolicLink()||!st.isFile()||(st.mode&0o077)!==0||!/^([a-f0-9]{64})$/.test(env[key]||''))stop();
+  if((process.getuid&&st.uid!==process.getuid())||st.isSymbolicLink()||!st.isFile()||st.size===0||st.size>4194304||(st.mode&0o077)!==0||!/^([a-f0-9]{64})$/.test(env[key]||''))stop();
   if(crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')!==env[key])stop();
  }
  return true;

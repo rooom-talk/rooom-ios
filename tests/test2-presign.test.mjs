@@ -39,11 +39,11 @@ test('wrong contexts, missing markers and unsupported arguments never start vali
 });
 test('staged bytes, permissions, expiry, identity and paths fail closed',{skip:process.platform!=='darwin'},()=>{
  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'presign-stage-test-')),dir=path.join(temp,'rooom-test2-presign-12345678-1234-1234-1234-123456789012');fs.mkdirSync(dir,{mode:0o700});
- const env={TARGET_ENV:'test2',ROOOM_TEST2_PRESIGN_OK:'1',ROOOM_MARKETING_VERSION:'1.6.2',ROOOM_TESTFLIGHT_BUILD_NUMBER:'100080',RUNNER_TEMP:temp,ROOOM_TEST2_SIGNING_DIR:dir,ROOOM_TEST2_IDENTITY_SHA1:'A'.repeat(40),ROOOM_TEST2_PROFILE_UUID:'12345678-1234-1234-1234-123456789012',ROOOM_TEST2_SIGNING_EXPIRES:String(Math.floor(Date.now()/1000)+60)};
+ const env={ROOOM_INTERNAL_ONLY:'<key>testFlightInternalTestingOnly</key><true/>',ROOOM_BUILD_CONDITIONS:'$(inherited) ROOOM_IMOBILE_ADS ROOOM_TEST2_RAIL',TARGET_ENV:'test2',ROOOM_TEST2_PRESIGN_OK:'1',ROOOM_MARKETING_VERSION:'1.6.2',ROOOM_TESTFLIGHT_BUILD_NUMBER:'100080',RUNNER_TEMP:temp,ROOOM_TEST2_SIGNING_DIR:dir,ROOOM_TEST2_IDENTITY_SHA1:'A'.repeat(40),ROOOM_TEST2_PROFILE_UUID:'12345678-1234-1234-1234-123456789012',ROOOM_TEST2_SIGNING_EXPIRES:String(Math.floor(Date.now()/1000)+60)};
  const entries=[['identity.p12','ROOOM_TEST2_P12_SHA256'],['profile.mobileprovision','ROOOM_TEST2_PROFILE_SHA256']];for(const [file,key]of entries){fs.writeFileSync(path.join(dir,file),'synthetic-only',{mode:0o600});env[key]=hash('synthetic-only');}
  try{
   assert.equal(verifyStage(env),true);
-  for(const extra of [{ROOOM_TEST2_PRESIGN_OK:''},{ROOOM_TEST2_SIGNING_EXPIRES:'1'},{ROOOM_TEST2_IDENTITY_SHA1:'bad'},{ROOOM_TESTFLIGHT_BUILD_NUMBER:'100079'},{ROOOM_TEST2_PROFILE_SHA256:'0'.repeat(64)},{TARGET_ENV:'production'},{ROOOM_MARKETING_VERSION:'1.6'}])assert.throws(()=>verifyStage({...env,...extra}));
+  for(const extra of [{ROOOM_INTERNAL_ONLY:''},{ROOOM_BUILD_CONDITIONS:''},{ROOOM_TEST2_SIGNING_EXPIRES:'9'.repeat(100)},{ROOOM_TEST2_PRESIGN_OK:''},{ROOOM_TEST2_SIGNING_EXPIRES:'1'},{ROOOM_TEST2_IDENTITY_SHA1:'bad'},{ROOOM_TESTFLIGHT_BUILD_NUMBER:'100079'},{ROOOM_TEST2_PROFILE_SHA256:'0'.repeat(64)},{TARGET_ENV:'production'},{ROOOM_MARKETING_VERSION:'1.6'}])assert.throws(()=>verifyStage({...env,...extra}));
   fs.chmodSync(dir,0o755);assert.throws(()=>verifyStage(env));fs.chmodSync(dir,0o700);
   fs.chmodSync(path.join(dir,'identity.p12'),0o644);assert.throws(()=>verifyStage(env));fs.chmodSync(path.join(dir,'identity.p12'),0o600);
   fs.writeFileSync(path.join(dir,'identity.p12'),'changed');assert.throws(()=>verifyStage(env));fs.writeFileSync(path.join(dir,'identity.p12'),'synthetic-only');
