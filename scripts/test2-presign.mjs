@@ -47,4 +47,11 @@ export function main(args=process.argv.slice(2),env=process.env){
   console.log('TEST2 PRESIGN PASS: all checks passed before identity installation; no app signing.');
  }finally{if(fs.existsSync(binary))fs.unlinkSync(binary);}
 }
-if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){try{main();}catch(error){console.error(/^TEST2 PRESIGN STOP: [a-z_ ]+$/.test(error.message)?error.message:'TEST2 PRESIGN STOP: validation unavailable');process.exitCode=1;}}
+export function publicFailure(error){
+ const message=typeof error?.message==='string'?error.message:'';
+ const safe=safeFailure(message);
+ if(safe!=='TEST2 PRESIGN STOP: validation unavailable')return safe;
+ if(['TEST2 PRESIGN STOP: staged identity binding','TEST2 PRESIGN STOP: validator compilation'].includes(message))return message;
+ return 'TEST2 PRESIGN STOP: validation unavailable';
+}
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){try{main();}catch(error){console.error(publicFailure(error));process.exitCode=1;}}
