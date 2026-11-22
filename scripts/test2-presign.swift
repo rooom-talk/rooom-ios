@@ -148,21 +148,41 @@ func evaluate(_ trust: SecTrust, anchors: [SecCertificate], codeSigning: Bool, n
 #endif
     try require(accepted, .trust)
 }
-func verifiedCMS(_ data: Data, anchors: [SecCertificate], now: Date, revocation: Bool = true) throws -> Data {
-    try require(!data.isEmpty && data.count <= 4_194_304, .cms)
-    var raw: CMSDecoder?; try require(CMSDecoderCreate(&raw) == errSecSuccess, .cms); guard let decoder = raw else { throw GateError.cms }
+enum CMSLayer: String { case outer, inner }
+enum CMSStage: String, CaseIterable {
+    case bounds, create, decoder, update, finalize, count_api, count_one, signature_api, signature_valid, trust_present, trust_evaluate, cert_api, cert_present, cert_parse, name_match, digital_signature, non_ca, not_submission, content_api, content_present, content_nonempty, plist_parse, inner_present, der_parse
+}
+struct CMSFault: Error { let layer: CMSLayer; let stage: CMSStage }
+func cmsStep<T>(_ layer: CMSLayer, _ stage: CMSStage, _ body: () throws -> T) throws -> T {
+    do { return try body() } catch { throw CMSFault(layer: layer, stage: stage) }
+}
+func verifiedCMS(_ data: Data, anchors: [SecCertificate], now: Date, revocation: Bool = true, layer: CMSLayer = .outer) throws -> Data {
+    func check(_ stage: CMSStage, _ condition: @autoclosure () -> Bool) throws {
+        try cmsStep(layer, stage) { try require(condition(), .cms) }
+    }
+    try check(.bounds, !data.isEmpty && data.count <= 4_194_304)
+    var raw: CMSDecoder?; try check(.create, CMSDecoderCreate(&raw) == errSecSuccess)
+    guard let decoder = raw else { throw CMSFault(layer: layer, stage: .decoder) }
     let update = data.withUnsafeBytes { CMSDecoderUpdateMessage(decoder, $0.baseAddress!, $0.count) }
-    try require(update == errSecSuccess && CMSDecoderFinalizeMessage(decoder) == errSecSuccess, .cms)
-    var count = 0; try require(CMSDecoderGetNumSigners(decoder, &count) == errSecSuccess && count == 1, .cms)
+    try check(.update, update == errSecSuccess)
+    try check(.finalize, CMSDecoderFinalizeMessage(decoder) == errSecSuccess)
+    var count = 0; try check(.count_api, CMSDecoderGetNumSigners(decoder, &count) == errSecSuccess)
+    try check(.count_one, count == 1)
     var status = CMSSignerStatus(rawValue: 0)!; var trust: SecTrust?
-    try require(CMSDecoderCopySignerStatus(decoder, 0, SecPolicyCreateBasicX509(), false, &status, &trust, nil) == errSecSuccess && status == .valid, .cms)
-    guard let signerTrust = trust else { throw GateError.cms }; try evaluate(signerTrust, anchors: anchors, codeSigning: false, now: now, revocation: revocation)
-    var signer: SecCertificate?; try require(CMSDecoderCopySignerCert(decoder, 0, &signer) == errSecSuccess, .cms)
-    guard let signer else { throw GateError.cms }
-    let facts = try CertificateFacts.read(SecCertificateCopyData(signer) as Data)
-    try require(facts.commonName == "Apple iPhone OS Provisioning Profile Signing" && facts.digitalSignature && !facts.ca && !facts.iosSubmission, .cms)
-    var content: CFData?; try require(CMSDecoderCopyContent(decoder, &content) == errSecSuccess, .cms)
-    guard let content, CFDataGetLength(content) > 0 else { throw GateError.cms }; return content as Data
+    try check(.signature_api, CMSDecoderCopySignerStatus(decoder, 0, SecPolicyCreateBasicX509(), false, &status, &trust, nil) == errSecSuccess)
+    try check(.signature_valid, status == .valid)
+    guard let signerTrust = trust else { throw CMSFault(layer: layer, stage: .trust_present) }
+    try cmsStep(layer, .trust_evaluate) { try evaluate(signerTrust, anchors: anchors, codeSigning: false, now: now, revocation: revocation) }
+    var signer: SecCertificate?; try check(.cert_api, CMSDecoderCopySignerCert(decoder, 0, &signer) == errSecSuccess)
+    guard let signer else { throw CMSFault(layer: layer, stage: .cert_present) }
+    let facts = try cmsStep(layer, .cert_parse) { try CertificateFacts.read(SecCertificateCopyData(signer) as Data) }
+    try check(.name_match, facts.commonName == "Apple iPhone OS Provisioning Profile Signing")
+    try check(.digital_signature, facts.digitalSignature)
+    try check(.non_ca, !facts.ca)
+    try check(.not_submission, !facts.iosSubmission)
+    var content: CFData?; try check(.content_api, CMSDecoderCopyContent(decoder, &content) == errSecSuccess)
+    guard let content else { throw CMSFault(layer: layer, stage: .content_present) }
+    try check(.content_nonempty, CFDataGetLength(content) > 0); return content as Data
 }
 
 func validateProfile(_ p: [String: Any], der: [String: Any], leaf: Data, team: String, now: Date, requested: [String: Any]) throws -> String {
@@ -212,7 +232,7 @@ func importIdentity(_ p12: Data, password: String) throws -> (SecCertificate, [S
 }
 
 @available(macOS 15.0, *)
-func runGate(_ env: [String: String], root: URL) throws {
+func runGate(_ env: [String: String], root: URL, diagnosticOnly: Bool = false) throws {
     try require(env["TARGET_ENV"] == "test2" && env["ROOOM_TESTFLIGHT_BUILD_NUMBER"].flatMap(Int.init).map { $0 > 100079 } == true && env["ROOOM_MARKETING_VERSION"] == "1.6.2", .context)
     try require(env["ROOOM_INTERNAL_ONLY"] == "<key>testFlightInternalTestingOnly</key><true/>" && env["ROOOM_BUILD_CONDITIONS"] == "$(inherited) ROOOM_IMOBILE_ADS ROOOM_TEST2_RAIL", .context)
     guard let team = env["APPLE_TEAM_ID"], team.range(of: "^[A-Z0-9]{10}$", options: .regularExpression) != nil,
@@ -227,13 +247,17 @@ func runGate(_ env: [String: String], root: URL) throws {
     try CertificateFacts.read(leaf).validate(team: team, now: now)
     var trust: SecTrust?; try require(SecTrustCreateWithCertificates(chain as CFArray, SecPolicyCreateBasicX509(), &trust) == errSecSuccess, .trust)
     guard let trust else { throw GateError.trust }; try evaluate(trust, anchors: anchors, codeSigning: true, now: now)
-    let payload = try verifiedCMS(profile, anchors: anchors, now: now)
-    guard let p = try PropertyListSerialization.propertyList(from: payload, format: nil) as? [String: Any], let inner = p["DER-Encoded-Profile"] as? Data else { throw GateError.profile }
-    let innerPayload = try verifiedCMS(inner, anchors: anchors, now: now)
-    let der = try DER.decode(innerPayload).dictionary()
+    let payload = try verifiedCMS(profile, anchors: anchors, now: now, layer: .outer)
+    let p: [String: Any] = try cmsStep(.outer, .plist_parse) {
+        guard let value = try PropertyListSerialization.propertyList(from: payload, format: nil) as? [String: Any] else { throw GateError.profile }; return value
+    }
+    guard let inner = p["DER-Encoded-Profile"] as? Data else { throw CMSFault(layer: .inner, stage: .inner_present) }
+    let innerPayload = try verifiedCMS(inner, anchors: anchors, now: now, layer: .inner)
+    let der = try cmsStep(.inner, .der_parse) { try DER.decode(innerPayload).dictionary() }
     let entitlementData = try Data(contentsOf: root.appendingPathComponent("ios/App/App/App.entitlements"))
     guard let requested = try PropertyListSerialization.propertyList(from: entitlementData, format: nil) as? [String: Any] else { throw GateError.entitlement }
     let uuid = try validateProfile(p, der: der, leaf: leaf, team: team, now: now, requested: requested)
+    if diagnosticOnly { print("TEST2 DIAGNOSTIC PASS: validation only; no staging/signing/upload."); return }
     // Stage only after every check passes. No private-key PEM is ever written.
     let dir = URL(fileURLWithPath: temp).appendingPathComponent("rooom-test2-presign-" + UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
@@ -253,11 +277,15 @@ func runGate(_ env: [String: String], root: URL) throws {
 @main struct Main {
     static func main() {
         do {
-            try require(CommandLine.arguments.count == 1, .input)
+            let diagnosticOnly = CommandLine.arguments == [CommandLine.arguments[0], "--diagnose-only"]
+            try require(CommandLine.arguments.count == 1 || diagnosticOnly, .input)
             guard #available(macOS 15.0, *) else { throw GateError.context }
-            try runGate(ProcessInfo.processInfo.environment, root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+            try runGate(ProcessInfo.processInfo.environment, root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath), diagnosticOnly: diagnosticOnly)
         } catch {
             // Never print underlying CFErrors, subject names, passwords or paths.
+            if let failure = error as? CMSFault {
+                FileHandle.standardError.write(Data("TEST2 PRESIGN STOP: cms_\(failure.layer.rawValue)_\(failure.stage.rawValue)\n".utf8)); exit(1)
+            }
             let code = (error as? GateError)?.rawValue ?? "input"
             FileHandle.standardError.write(Data("TEST2 PRESIGN STOP: \(code)\n".utf8)); exit(1)
         }

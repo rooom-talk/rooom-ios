@@ -23,7 +23,7 @@ test('TEST2 pins manual signing identity/profile and rechecks stage before every
 });
 test('release remains manual-only and no App Store/external distribution action is added',()=>{
  assert.match(workflow,/on:\n  workflow_dispatch:/);assert(!/^  (push|pull_request|schedule):/m.test(workflow));assert.equal((workflow.match(/--upload-app/g)||[]).length,1);assert(!/submitForReview|releaseVersion|betaReviewSubmissions/.test(workflow));
- const ci=fs.readFileSync('.github/workflows/test2-presign-check.yml','utf8');assert(!ci.includes('secrets.'));assert(!ci.includes('security import'));assert(!ci.includes('codesign '));
+ const ci=fs.readFileSync('.github/workflows/test2-presign-check.yml','utf8');assert(!ci.split('  real-cms-diagnostic:')[0].includes('secrets.'));assert(!ci.includes('security import'));assert(!ci.includes('codesign '));
 });
 test('production CLI has no synthetic root, time, revocation or test bypass inputs',()=>{
  const prod=swift.slice(swift.indexOf('func runGate('));assert.match(prod,/let now = Date\(\)/);assert.match(prod,/loadAppleRoots\(root.appendingPathComponent/);assert(!prod.includes('revocation: false'));assert(!prod.includes('ROOOM_PRESIGN_TESTS')||prod.includes('#if !ROOOM_PRESIGN_TESTS'));

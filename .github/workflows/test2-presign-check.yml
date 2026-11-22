@@ -15,10 +15,17 @@ on:
         description: Exact source to test; never signs/uploads the app
         required: true
         type: string
+      confirmation:
+        description: Validation only, never app signing or upload
+        required: true
+        default: SYNTHETIC_ONLY
+        type: choice
+        options: [SYNTHETIC_ONLY, DIAGNOSE_REAL_CMS_ONLY]
 permissions:
   contents: read
 jobs:
   presign-gate:
+    if: github.event_name != 'workflow_dispatch' || inputs.confirmation != 'DIAGNOSE_REAL_CMS_ONLY'
     runs-on: macos-15
     timeout-minutes: 15
     steps:
@@ -30,9 +37,44 @@ jobs:
         with:
           node-version: 22
       - name: Source, order, binding and failure-path tests without credentials
-        run: node --test tests/test2-presign.test.mjs
+        run: node --test tests/test2-presign*.test.mjs
       - name: Actual macOS Security API tests using disposable synthetic CA and identities
         run: node tests/test2-presign-crypto.mjs
       - name: Existing Windows request entry with fully mocked I/O
         shell: pwsh
         run: ./tests/testflight-command.test.ps1
+
+  real-cms-diagnostic:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'DIAGNOSE_REAL_CMS_ONLY' && github.ref == 'refs/heads/release/ios-review-candidate-20261011'
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+          persist-credentials: false
+      - name: Verify exact diagnostic source before secret access
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          test "$(gh api repos/rooom-talk/rooom-ios/branches/release/ios-review-candidate-20261011 --jq .commit.sha)" = "$APPROVED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate real materials only; never stage or sign
+        env:
+          TARGET_ENV: test2
+          ROOOM_MARKETING_VERSION: '1.6.2'
+          # Historical incident context only: no Apple allocation/upload.
+          ROOOM_TESTFLIGHT_BUILD_NUMBER: '100083'
+          ROOOM_INTERNAL_ONLY: '<key>testFlightInternalTestingOnly</key><true/>'
+          ROOOM_BUILD_CONDITIONS: '$(inherited) ROOOM_IMOBILE_ADS ROOOM_TEST2_RAIL'
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: node scripts/test2-presign.mjs --diagnose-only

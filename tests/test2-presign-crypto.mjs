@@ -9,7 +9,7 @@ try{
  fs.writeFileSync(path.join(tmp,'cms.cnf'),'[leaf]\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\n');
  fs.writeFileSync(path.join(tmp,'ca.cnf'),'[req]\ndistinguished_name=dn\nx509_extensions=root\nprompt=no\n[dn]\nCN=RoooM SYNTHETIC test CA\n[root]\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid:always\n');
  run('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout','ca.key','-out','ca.pem','-config','ca.cnf','-extensions','root','-days','2','-sha256']);
- for(const [name,subject,config]of [['identity','/CN=Apple Distribution: SYNTHETIC/OU=ABC123DE45','leaf.cnf'],['signer','/CN=Apple iPhone OS Provisioning Profile Signing','cms.cnf']]){
+ for(const [name,subject,config]of [['identity','/CN=Apple Distribution: SYNTHETIC/OU=ABC123DE45','leaf.cnf'],['signer','/CN=Apple iPhone OS Provisioning Profile Signing','cms.cnf'],['wrong-name','/CN=Unapproved SYNTHETIC signer','cms.cnf']]){
   run('openssl',['req','-new','-newkey','rsa:2048','-nodes','-keyout',name+'.key','-out',name+'.csr','-subj',subject]);
   run('openssl',['x509','-req','-in',name+'.csr','-CA','ca.pem','-CAkey','ca.key','-CAcreateserial','-out',name+'.pem','-days','1','-sha256','-extfile',config,'-extensions','leaf']);
  }
@@ -20,7 +20,7 @@ try{
  run('openssl',[...exportArgs,'-inkey','identity.key'],{env:password});
  run('openssl',['pkcs12','-export','-nokeys','-in','identity.pem','-out','cert-only.p12','-passout','env:FIXTURE_P12_PASSWORD','-certpbe','PBE-SHA1-3DES','-macalg','sha1'],{env:password});
  fs.writeFileSync(path.join(tmp,'payload.plist'),'<?xml version="1.0"?><plist version="1.0"><dict><key>Synthetic</key><true/></dict></plist>');
- for(const [file,name]of [['profile.cms','signer'],['wrong-signer.cms','identity']])run('openssl',['cms','-sign','-binary','-nodetach','-in','payload.plist','-signer',name+'.pem','-inkey',name+'.key','-certfile','ca.pem','-outform','DER','-out',file,'-md','sha256']);
+ for(const [file,name]of [['profile.cms','signer'],['wrong-signer.cms','identity'],['wrong-name.cms','wrong-name']])run('openssl',['cms','-sign','-binary','-nodetach','-in','payload.plist','-signer',name+'.pem','-inkey',name+'.key','-certfile','ca.pem','-outform','DER','-out',file,'-md','sha256']);
  const before=run('/usr/bin/security',['find-identity','-p','codesigning']);
  const testBinary=path.join(tmp,'tests');
  console.log(run('xcrun',['swiftc','-parse-as-library','-D','ROOOM_PRESIGN_TESTS',path.join(root,'scripts/test2-presign.swift'),path.join(root,'tests/test2-presign-main.swift'),'-o',testBinary,'-framework','Security','-framework','CryptoKit']));
