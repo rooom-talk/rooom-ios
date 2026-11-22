@@ -72,3 +72,5 @@ $global:testflightFixture.posts=@();$global:testflightFixture.fault='live';$refu
 try { & $entry -ApprovedSha $sha -PullRequest 21 -Test2Rail -WebRoot $webFixture -WebSha ('d'*40) } catch { $refused=$true }
 if (!$refused -or $global:testflightFixture.posts.Count) { throw 'Live Web mismatch did not stop upload' }
 Write-Host 'PASS: TEST2 live Web mismatch rejects before workflow dispatch.'
+# Expected failing native mocks were asserted above; do not leak their exit status to the CI shell.
+$global:LASTEXITCODE=0

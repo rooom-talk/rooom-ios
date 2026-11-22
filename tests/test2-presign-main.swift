@@ -11,6 +11,8 @@ import Darwin
         func rejects(_ operation: () throws -> Void) throws {
             do { try operation() } catch { count += 1; return }; fatalError("Expected rejection")
         }
+        try check { try require(SecPolicyCreateWithProperties(kSecPolicyAppleCodeSigning,nil) != nil,.trust) }
+        try check { try require(SecPolicyCreateRevocation(kSecRevocationUseAnyAvailableMethod | kSecRevocationRequirePositiveResponse) != nil,.trust) }
         let now = Date(), team = "ABC123DE45", prefix = "OLD123AB45", leaf = Data("synthetic public certificate".utf8)
         let ent: [String: Any] = ["application-identifier":prefix+".com.rooom.talk","com.apple.developer.team-identifier":team,"get-task-allow":false,"beta-reports-active":true,"aps-environment":"production"]
         let p: [String: Any] = ["UUID":"12345678-1234-1234-1234-123456789012","CreationDate":now.addingTimeInterval(-600),"ExpirationDate":now.addingTimeInterval(3600),"Platform":["iOS"],"TeamIdentifier":[team],"ApplicationIdentifierPrefix":[prefix],"Entitlements":ent,"DeveloperCertificates":[leaf]]
