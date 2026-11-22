@@ -10,6 +10,8 @@ test('diagnostic exits before stage write and wrapper never reads env markers',(
  assert.match(swift,/diagnosticOnly: diagnosticOnly/);assert.match(swift,/layer: \.outer/);assert.match(swift,/layer: \.inner/);
  assert.match(swift,/if layer == \.outer \{ try check\(\.name_match/);
  assert.match(swift,/if layer == \.inner \{ try verifyProfilePurpose\(data, content: content as Data\)/);
+ assert.match(swift,/if diagnosticOnly \{ try verifyProfilePolicyEvidence\(inner\)/);
+ assert.match(swift,/status == 0 && flags & \(UInt64\(1\) << 39\) != 0/);
  assert.match(swift,/kSecRevocationRequirePositiveResponse/);
 });
 test('real workflow cannot reach distribution and secrets occur after exact source guard only',()=>{

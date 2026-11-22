@@ -18,7 +18,7 @@ export function verifyStage(env=process.env){
  return true;
 }
 export function safeFailure(stderr){
- const stages='bounds|create|decoder|update|finalize|count_api|count_one|signature_api|signature_valid|trust_present|trust_policy_create|trust_policy|trust_anchors|trust_anchor_only|trust_date|trust_network|trust_evaluate|cert_api|cert_present|cert_binding|cert_parse|name_match|digital_signature|non_ca|not_submission|content_api|content_present|content_nonempty|profile_policy_load|profile_policy_symbol|profile_policy_accept|profile_policy_content|plist_parse|inner_present|der_parse';
+ const stages='bounds|create|decoder|update|finalize|count_api|count_one|signature_api|signature_valid|trust_present|trust_policy_create|trust_policy|trust_anchors|trust_anchor_only|trust_date|trust_network|trust_evaluate|cert_api|cert_present|cert_binding|cert_parse|name_match|digital_signature|non_ca|not_submission|content_api|content_present|content_nonempty|profile_policy_load|profile_policy_symbol|profile_policy_accept|profile_policy_content|profile_policy_flags|plist_parse|inner_present|der_parse';
  const match=new RegExp('^TEST2 PRESIGN STOP: ((?:input|der|certificate|identity|trust|cms|profile|entitlement|context|staging)|cms_(?:outer|inner)_(?:'+stages+'))\\n?$').exec(stderr||'');
  return 'TEST2 PRESIGN STOP: '+(match?match[1]:'validation unavailable');
 }
@@ -32,7 +32,7 @@ export function main(args=process.argv.slice(2),env=process.env){
   if(build.status!==0)throw Error('TEST2 PRESIGN STOP: validator compilation');
   const result=cp.spawnSync(binary,diagnosticOnly?['--diagnose-only']:[],{cwd:root,env,encoding:'utf8',timeout:180000});
   if(result.status!==0)throw Error(safeFailure(result.stderr));
-  if(diagnosticOnly){console.log('TEST2 DIAGNOSTIC PASS: validation only; no staging/signing/upload.');return;}
+  if(diagnosticOnly){console.log('TEST2 APPLE PROFILE PURPOSE PASS: production-only profile policy and chain flag verified.');console.log('TEST2 DIAGNOSTIC PASS: validation only; no staging/signing/upload.');return;}
   const rows=fs.readFileSync(env.GITHUB_ENV,'utf8').split(/\r?\n/);
   for(const name of ['ROOOM_TEST2_IDENTITY_SHA1','ROOOM_TEST2_PROFILE_UUID','ROOOM_TEST2_SIGNING_DIR']){
    const row=rows.filter(r=>r.startsWith(name+'=')).at(-1);if(!row)throw Error('TEST2 PRESIGN STOP: staging');

@@ -158,7 +158,7 @@ func evaluate(_ trust: SecTrust, anchors: [SecCertificate], codeSigning: Bool, n
 }
 enum CMSLayer: String { case outer, inner }
 enum CMSStage: String, CaseIterable {
-    case bounds, create, decoder, update, finalize, count_api, count_one, signature_api, signature_valid, trust_present, trust_policy_create, trust_policy, trust_anchors, trust_anchor_only, trust_date, trust_network, trust_evaluate, cert_api, cert_present, cert_binding, cert_parse, name_match, digital_signature, non_ca, not_submission, content_api, content_present, content_nonempty, profile_policy_load, profile_policy_symbol, profile_policy_accept, profile_policy_content, plist_parse, inner_present, der_parse
+    case bounds, create, decoder, update, finalize, count_api, count_one, signature_api, signature_valid, trust_present, trust_policy_create, trust_policy, trust_anchors, trust_anchor_only, trust_date, trust_network, trust_evaluate, cert_api, cert_present, cert_binding, cert_parse, name_match, digital_signature, non_ca, not_submission, content_api, content_present, content_nonempty, profile_policy_load, profile_policy_symbol, profile_policy_accept, profile_policy_content, profile_policy_flags, plist_parse, inner_present, der_parse
 }
 struct CMSFault: Error { let layer: CMSLayer; let stage: CMSStage }
 func cmsStep<T>(_ layer: CMSLayer, _ stage: CMSStage, _ body: () throws -> T) throws -> T {
@@ -194,6 +194,23 @@ func verifyProfilePurpose(_ data: Data, content: Data) throws {
     defer { dlclose(library) }
     guard let symbol = dlsym(library, "CTEvaluateProvisioningProfile") else { throw CMSFault(layer: .inner, stage: .profile_policy_symbol) }
     try checkProfilePolicy(data, content: content, evaluator: unsafeBitCast(symbol, to: ProfilePolicyEvaluator.self))
+}
+// Additional inspection-only evidence: the policy flag is documented explicitly
+// by Apple. CTParseAmfiCMS's leaf-only candidate flags are never authorization.
+func verifyProfilePolicyEvidence(_ data: Data) throws {
+    typealias VerifyChain = @convention(c) (UnsafePointer<UInt8>?, UInt, Bool, UInt32, UnsafeMutablePointer<UInt64>?) -> Int32
+    guard let library=dlopen("/usr/lib/libmis.dylib",RTLD_NOW | RTLD_LOCAL) else { throw CMSFault(layer:.inner,stage:.profile_policy_load) }
+    defer { dlclose(library) }
+    guard let symbol=dlsym(library,"CTVerifyAmfiCertificateChain") else { throw CMSFault(layer:.inner,stage:.profile_policy_symbol) }
+    let verify=unsafeBitCast(symbol,to:VerifyChain.self)
+    try data.withUnsafeBytes { raw in
+        try cmsStep(.inner,.profile_policy_flags) {
+            try require(!raw.isEmpty && raw.count <= 4_194_304,.cms)
+            var flags:UInt64=0
+            let status=verify(raw.baseAddress!.assumingMemoryBound(to:UInt8.self),UInt(raw.count),false,16,&flags)
+            try require(status == 0 && flags & (UInt64(1) << 39) != 0,.cms)
+        }
+    }
 }
 func verifiedCMS(_ data: Data, anchors: [SecCertificate], now: Date, revocation: Bool = true, layer: CMSLayer = .outer) throws -> Data {
     func check(_ stage: CMSStage, _ condition: @autoclosure () -> Bool) throws {
@@ -302,6 +319,7 @@ func runGate(_ env: [String: String], root: URL, diagnosticOnly: Bool = false) t
     let entitlementData = try Data(contentsOf: root.appendingPathComponent("ios/App/App/App.entitlements"))
     guard let requested = try PropertyListSerialization.propertyList(from: entitlementData, format: nil) as? [String: Any] else { throw GateError.entitlement }
     let uuid = try validateProfile(p, der: der, leaf: leaf, team: team, now: now, requested: requested)
+    if diagnosticOnly { try verifyProfilePolicyEvidence(inner) }
     if diagnosticOnly { print("TEST2 DIAGNOSTIC PASS: validation only; no staging/signing/upload."); return }
     // Stage only after every check passes. No private-key PEM is ever written.
     let dir = URL(fileURLWithPath: temp).appendingPathComponent("rooom-test2-presign-" + UUID().uuidString)
