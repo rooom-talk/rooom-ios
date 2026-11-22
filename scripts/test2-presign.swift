@@ -135,22 +135,29 @@ func loadAppleRoots(_ folder: URL) throws -> [SecCertificate] {
         guard let c = SecCertificateCreateWithData(nil, data as CFData) else { throw GateError.trust }; return c
     }
 }
-func evaluate(_ trust: SecTrust, anchors: [SecCertificate], codeSigning: Bool, now: Date, revocation: Bool = true) throws {
+func evaluate(_ trust: SecTrust, anchors: [SecCertificate], codeSigning: Bool, now: Date, revocation: Bool = true, cmsLayer: CMSLayer? = nil) throws {
+    func step(_ stage: CMSStage, _ body: () throws -> Void) throws {
+        if let cmsLayer { try cmsStep(cmsLayer, stage, body) } else { try body() }
+    }
     var policies = [SecPolicyCreateBasicX509()]
     if codeSigning { guard let p = SecPolicyCreateWithProperties(kSecPolicyAppleCodeSigning, nil) else { throw GateError.trust }; policies.append(p) }
-    if revocation { guard let p = SecPolicyCreateRevocation(kSecRevocationUseAnyAvailableMethod | kSecRevocationRequirePositiveResponse) else { throw GateError.trust }; policies.append(p) }
-    try require(SecTrustSetPolicies(trust, policies as CFArray) == errSecSuccess, .trust)
-    try require(SecTrustSetAnchorCertificates(trust, anchors as CFArray) == errSecSuccess && SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess, .trust)
-    try require(SecTrustSetVerifyDate(trust, now as CFDate) == errSecSuccess && SecTrustSetNetworkFetchAllowed(trust, revocation) == errSecSuccess, .trust)
+    try step(.trust_policy_create) {
+        if revocation { guard let p = SecPolicyCreateRevocation(kSecRevocationUseAnyAvailableMethod | kSecRevocationRequirePositiveResponse) else { throw GateError.trust }; policies.append(p) }
+    }
+    try step(.trust_policy) { try require(SecTrustSetPolicies(trust, policies as CFArray) == errSecSuccess, .trust) }
+    try step(.trust_anchors) { try require(SecTrustSetAnchorCertificates(trust, anchors as CFArray) == errSecSuccess, .trust) }
+    try step(.trust_anchor_only) { try require(SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess, .trust) }
+    try step(.trust_date) { try require(SecTrustSetVerifyDate(trust, now as CFDate) == errSecSuccess, .trust) }
+    try step(.trust_network) { try require(SecTrustSetNetworkFetchAllowed(trust, revocation) == errSecSuccess, .trust) }
     var error: CFError?; let accepted = SecTrustEvaluateWithError(trust, &error)
 #if ROOOM_PRESIGN_TESTS
     if !accepted { FileHandle.standardError.write(Data("SYNTHETIC trust result: \(error.map { CFErrorGetCode($0) } ?? 0)\n".utf8)) }
 #endif
-    try require(accepted, .trust)
+    try step(.trust_evaluate) { try require(accepted, .trust) }
 }
 enum CMSLayer: String { case outer, inner }
 enum CMSStage: String, CaseIterable {
-    case bounds, create, decoder, update, finalize, count_api, count_one, signature_api, signature_valid, trust_present, trust_evaluate, cert_api, cert_present, cert_parse, name_match, digital_signature, non_ca, not_submission, content_api, content_present, content_nonempty, plist_parse, inner_present, der_parse
+    case bounds, create, decoder, update, finalize, count_api, count_one, signature_api, signature_valid, trust_present, trust_policy_create, trust_policy, trust_anchors, trust_anchor_only, trust_date, trust_network, trust_evaluate, cert_api, cert_present, cert_parse, name_match, digital_signature, non_ca, not_submission, content_api, content_present, content_nonempty, plist_parse, inner_present, der_parse
 }
 struct CMSFault: Error { let layer: CMSLayer; let stage: CMSStage }
 func cmsStep<T>(_ layer: CMSLayer, _ stage: CMSStage, _ body: () throws -> T) throws -> T {
@@ -172,7 +179,7 @@ func verifiedCMS(_ data: Data, anchors: [SecCertificate], now: Date, revocation:
     try check(.signature_api, CMSDecoderCopySignerStatus(decoder, 0, SecPolicyCreateBasicX509(), false, &status, &trust, nil) == errSecSuccess)
     try check(.signature_valid, status == .valid)
     guard let signerTrust = trust else { throw CMSFault(layer: layer, stage: .trust_present) }
-    try cmsStep(layer, .trust_evaluate) { try evaluate(signerTrust, anchors: anchors, codeSigning: false, now: now, revocation: revocation) }
+    try evaluate(signerTrust, anchors: anchors, codeSigning: false, now: now, revocation: revocation, cmsLayer: layer)
     var signer: SecCertificate?; try check(.cert_api, CMSDecoderCopySignerCert(decoder, 0, &signer) == errSecSuccess)
     guard let signer else { throw CMSFault(layer: layer, stage: .cert_present) }
     let facts = try cmsStep(layer, .cert_parse) { try CertificateFacts.read(SecCertificateCopyData(signer) as Data) }

@@ -18,7 +18,7 @@ export function verifyStage(env=process.env){
  return true;
 }
 export function safeFailure(stderr){
- const stages='bounds|create|decoder|update|finalize|count_api|count_one|signature_api|signature_valid|trust_present|trust_evaluate|cert_api|cert_present|cert_parse|name_match|digital_signature|non_ca|not_submission|content_api|content_present|content_nonempty|plist_parse|inner_present|der_parse';
+ const stages='bounds|create|decoder|update|finalize|count_api|count_one|signature_api|signature_valid|trust_present|trust_policy_create|trust_policy|trust_anchors|trust_anchor_only|trust_date|trust_network|trust_evaluate|cert_api|cert_present|cert_parse|name_match|digital_signature|non_ca|not_submission|content_api|content_present|content_nonempty|plist_parse|inner_present|der_parse';
  const match=new RegExp('^TEST2 PRESIGN STOP: ((?:input|der|certificate|identity|trust|cms|profile|entitlement|context|staging)|cms_(?:outer|inner)_(?:'+stages+'))\\n?$').exec(stderr||'');
  return 'TEST2 PRESIGN STOP: '+(match?match[1]:'validation unavailable');
 }
