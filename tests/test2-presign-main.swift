@@ -61,6 +61,7 @@ import CryptoKit
         let folder=URL(fileURLWithPath:CommandLine.arguments[1])
         func bytes(_ name:String)throws->Data{try Data(contentsOf:folder.appendingPathComponent(name))}
         let ca=SecCertificateCreateWithData(nil,try bytes("ca.der") as CFData)!
+        print("SYNTHETIC phase: P12")
         let (cert,chain)=try importIdentity(try bytes("identity.p12"),password:"fixture-only-password")
         try check { try CertificateFacts.read(SecCertificateCopyData(cert) as Data).validate(team:team,now:now) }
         try rejects { _ = try importIdentity(try bytes("identity.p12"),password:"wrong-fixture-password") }
@@ -68,15 +69,18 @@ import CryptoKit
         try rejects { _ = try importIdentity(Data([0,1,2]),password:"fixture-only-password") }
         let basicLeaf=SecCertificateCreateWithData(nil,try bytes("signer.der") as CFData)!
         var trust:SecTrust?;try require(SecTrustCreateWithCertificates([basicLeaf,ca] as CFArray,SecPolicyCreateBasicX509(),&trust)==errSecSuccess,.trust)
+        print("SYNTHETIC phase: basic chain")
         try check { try evaluate(trust!,anchors:[ca],codeSigning:false,now:now,revocation:false) }
         let roots=try loadAppleRoots(URL(fileURLWithPath:FileManager.default.currentDirectoryPath).appendingPathComponent("scripts/presign-apple-roots"))
         try rejects { try evaluate(trust!,anchors:roots,codeSigning:true,now:now) }
         try rejects { try evaluate(trust!,anchors:[ca],codeSigning:false,now:now,revocation:true) }
+        print("SYNTHETIC phase: CMS")
         let cms=try bytes("profile.cms"), expected=try bytes("payload.plist")
         try check { try require(verifiedCMS(cms,anchors:[ca],now:now,revocation:false)==expected,.cms) }
         try rejects { _ = try verifiedCMS(cms,anchors:roots,now:now) }
         try rejects { _ = try verifiedCMS(try bytes("wrong-signer.cms"),anchors:[ca],now:now,revocation:false) }
-        try rejects { var bad=cms;guard let range=bad.range(of:Data("Synthetic".utf8)) else { throw GateError.cms };bad[range.lowerBound] ^= 1;_ = try verifiedCMS(bad,anchors:[ca],now:now,revocation:false) }
+        guard let payloadRange=cms.range(of:Data("Synthetic".utf8)) else { fatalError("Synthetic CMS payload not embedded") }
+        try rejects { var bad=cms;bad[payloadRange.lowerBound] ^= 1;_ = try verifiedCMS(bad,anchors:[ca],now:now,revocation:false) }
         try rejects { _ = try verifiedCMS(Data("not CMS".utf8),anchors:[ca],now:now,revocation:false) }
         try rejects { _ = try runGate(["TARGET_ENV":"production"],root:folder) }
         print("TEST2 PRESIGN SWIFT TESTS PASS: \(count) checks; synthetic identities/CMS only; no app signing or upload.")

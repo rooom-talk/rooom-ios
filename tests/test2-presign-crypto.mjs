@@ -24,7 +24,7 @@ try{
  const testBinary=path.join(tmp,'tests');
  console.log(run('xcrun',['swiftc','-parse-as-library','-D','ROOOM_PRESIGN_TESTS',path.join(root,'scripts/test2-presign.swift'),path.join(root,'tests/test2-presign-main.swift'),'-o',testBinary,'-framework','Security','-framework','CryptoKit']));
  console.log(run(testBinary,[tmp],{cwd:root}));
- assert.equal(run('/usr/bin/security',['find-identity','-v','-p','codesigning']),before,'Memory-only import added a keychain identity');
+ assert.equal(run('/usr/bin/security',['find-identity','-p','codesigning']),before,'Memory-only import added a keychain identity');
  const gateBinary=path.join(tmp,'production-gate');
  run('xcrun',['swiftc','-parse-as-library',path.join(root,'scripts/test2-presign.swift'),'-o',gateBinary,'-framework','Security','-framework','CryptoKit']);
  const envFile=path.join(tmp,'github-env');fs.writeFileSync(envFile,'');
