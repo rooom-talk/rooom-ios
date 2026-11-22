@@ -73,7 +73,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      checks: read
+      actions: read
     runs-on: macos-15
     timeout-minutes: 8
     steps:
